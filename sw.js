@@ -2,6 +2,7 @@ var CACHE = "tabilog-shell-v1";
 var SHELL = [
   "./tabilog.html",
   "./manifest.webmanifest",
+  "./firebase-config.js",
   "./icon-180.png",
   "./icon-192.png",
   "./icon-512.png"

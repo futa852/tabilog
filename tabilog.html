@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="旅ログ">
+<script src="firebase-config.js"></script>
 <style>
 :root{
   --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --line:#e2e5ea;
@@ -262,12 +263,162 @@ function memberName(trip, id){
   var m = trip.members.filter(function(x){ return x.id === id; })[0];
   return m ? m.name : "（削除済み）";
 }
+function myMemberId(trip){
+  if(!trip.cloudId) return null;
+  try{
+    var mine = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
+    var id = mine[trip.cloudId];
+    if(id && trip.members.some(function(m){ return m.id === id; })) return id;
+  }catch(e){}
+  return null;
+}
 function defaultPayerId(trip){
+  var mine = myMemberId(trip);
+  if(mine) return mine;
   if(trip.lastPayerId && trip.members.some(function(m){ return m.id === trip.lastPayerId; })) return trip.lastPayerId;
   return trip.members[0] ? trip.members[0].id : "";
 }
 function lineShareUrl(text){
   return "https://line.me/R/msg/text/?" + encodeURIComponent(text);
+}
+
+/* ---------------- cloud sync (Firebase, optional) ---------------- */
+var CLOUD = { app:null, db:null, auth:null, ready:false, unsubs:[], tripId:null };
+
+function cloudConfigured(){
+  var c = window.TABILOG_FIREBASE_CONFIG;
+  return !!(c && c.apiKey && c.apiKey.indexOf("REPLACE") !== 0);
+}
+
+function ensureFirebase(cb, errCb){
+  if(!cloudConfigured()){ errCb && errCb(); return; }
+  if(CLOUD.ready){ cb(); return; }
+  if(window._fbLoading){ window._fbLoading.push(cb); return; }
+  window._fbLoading = [cb];
+  var srcs = [
+    "https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js",
+    "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js",
+    "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"
+  ];
+  var i = 0;
+  function fail(){ window._fbLoading = null; errCb && errCb(); }
+  function loadNext(){
+    if(i >= srcs.length){
+      try{
+        CLOUD.app = firebase.initializeApp(window.TABILOG_FIREBASE_CONFIG);
+        CLOUD.auth = firebase.auth();
+        CLOUD.db = firebase.firestore();
+        try{ CLOUD.db.enablePersistence({ synchronizeTabs:true }).catch(function(){}); }catch(e){}
+        CLOUD.auth.onAuthStateChanged(function(user){
+          if(user && !CLOUD.ready){
+            CLOUD.ready = true;
+            var cbs = window._fbLoading; window._fbLoading = null;
+            if(cbs) cbs.forEach(function(f){ f(); });
+          }
+        });
+        CLOUD.auth.signInAnonymously().catch(fail);
+      }catch(e){ fail(); }
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = srcs[i];
+    s.onload = function(){ i++; loadNext(); };
+    s.onerror = fail;
+    document.head.appendChild(s);
+  }
+  loadNext();
+}
+
+function cloudTripRef(cloudId){ return CLOUD.db.collection("trips").doc(cloudId); }
+
+function cloudCreateTrip(t, cb){
+  ensureFirebase(function(){
+    var ref = cloudTripRef(t.id);
+    ref.set({
+      title: t.title, destination: t.destination || "",
+      startDate: t.startDate || "", endDate: t.endDate || "",
+      color: t.color || COLORS[0], createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function(){
+      return Promise.all(t.members.map(function(m){
+        return ref.collection("members").doc(m.id).set({ name: m.name });
+      }));
+    }).then(function(){ cb && cb(true); }).catch(function(){ cb && cb(false); });
+  }, function(){ cb && cb(false); });
+}
+
+function cloudUpgradeTrip(t, cb){
+  ensureFirebase(function(){
+    var ref = cloudTripRef(t.id);
+    ref.set({
+      title: t.title, destination: t.destination || "",
+      startDate: t.startDate || "", endDate: t.endDate || "",
+      color: t.color || COLORS[0], createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function(){
+      var ops = [];
+      t.members.forEach(function(m){ ops.push(ref.collection("members").doc(m.id).set({ name: m.name })); });
+      t.logs.forEach(function(l){
+        var data = Object.assign({}, l); var id = data.id; delete data.id;
+        ops.push(ref.collection("logs").doc(id).set(data));
+      });
+      t.expenses.forEach(function(e){
+        var data = Object.assign({}, e); var id = data.id; delete data.id;
+        ops.push(ref.collection("expenses").doc(id).set(data));
+      });
+      return Promise.all(ops);
+    }).then(function(){ cb && cb(true); }).catch(function(){ cb && cb(false); });
+  }, function(){ cb && cb(false); });
+}
+
+function cloudUnsubscribeAll(){
+  CLOUD.unsubs.forEach(function(u){ try{ u(); }catch(e){} });
+  CLOUD.unsubs = [];
+  CLOUD.tripId = null;
+}
+
+function cloudSyncTrip(cloudId){
+  if(!cloudConfigured()) return;
+  if(CLOUD.tripId === cloudId) return;
+  cloudUnsubscribeAll();
+  CLOUD.tripId = cloudId;
+  ensureFirebase(function(){
+    if(CLOUD.tripId !== cloudId) return;
+    var ref = cloudTripRef(cloudId);
+
+    CLOUD.unsubs.push(ref.onSnapshot(function(snap){
+      if(!snap.exists) return;
+      var t = db.trips.filter(function(x){ return x.id === cloudId; })[0];
+      if(!t) return;
+      var d = snap.data();
+      t.title = d.title; t.destination = d.destination; t.startDate = d.startDate;
+      t.endDate = d.endDate; t.color = d.color;
+      save(); render();
+    }));
+    CLOUD.unsubs.push(ref.collection("members").onSnapshot(function(snap){
+      var t = db.trips.filter(function(x){ return x.id === cloudId; })[0];
+      if(!t) return;
+      t.members = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); });
+      save(); render();
+    }));
+    CLOUD.unsubs.push(ref.collection("logs").onSnapshot(function(snap){
+      var t = db.trips.filter(function(x){ return x.id === cloudId; })[0];
+      if(!t) return;
+      t.logs = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); });
+      save(); render();
+    }));
+    CLOUD.unsubs.push(ref.collection("expenses").onSnapshot(function(snap){
+      var t = db.trips.filter(function(x){ return x.id === cloudId; })[0];
+      if(!t) return;
+      t.expenses = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); });
+      save(); render();
+    }));
+  }, function(){ /* オフライン等。ローカルキャッシュのまま表示を続ける */ });
+}
+
+function syncViewCloud(){
+  var tripId = (view.name === "trip" || view.name === "remind") ? view.id : null;
+  var t = tripId ? db.trips.filter(function(x){ return x.id === tripId; })[0] : null;
+  if(t && t.cloudId){ cloudSyncTrip(t.cloudId); }
+  else { cloudUnsubscribeAll(); }
 }
 
 /* ---------------- reminder scheduling (Windows タスクスケジューラ用) ---------------- */
@@ -295,10 +446,14 @@ function buildRemindDeleteCmd(t){
 /* ---------------- routing ---------------- */
 var _qp = new URLSearchParams(location.search);
 var _remindTripId = _qp.get("remind");
-var view = _remindTripId ? { name:"remind", id:_remindTripId } : { name:"home" };
+var _joinId = _qp.get("join");
+var view = _remindTripId ? { name:"remind", id:_remindTripId }
+  : _joinId ? { name:"join", id:_joinId }
+  : { name:"home" };
 function go(v){
   if(location.search) { try{ history.replaceState(null, "", location.pathname); }catch(e){} }
   view = v; render(); window.scrollTo(0,0);
+  syncViewCloud();
 }
 function curTrip(){ return db.trips.filter(function(t){ return t.id === view.id; })[0]; }
 
@@ -309,11 +464,56 @@ var COLORS = ["#2f6df6","#e5484d","#0f9d58","#c2790a","#8b5cf6","#0891b2"];
 /* ---------------- render ---------------- */
 function render(){
   if(view.name === "remind"){ renderRemind(); return; }
+  if(view.name === "join"){ renderJoin(); return; }
   if(view.name === "home") renderHome();
   else if(view.name === "trip"){
     if(!curTrip()){ go({name:"home"}); return; }
     renderTrip();
   }
+}
+
+function renderJoin(){
+  var id = view.id;
+  var already = db.trips.filter(function(x){ return x.id === id; })[0];
+  if(already){ go({ name:"trip", id:id, tab:"log" }); return; }
+
+  el("appbar").innerHTML = '<div class="grow"><h1>旅に参加</h1></div>';
+  el("fab").innerHTML = "";
+
+  if(!cloudConfigured()){
+    el("main").innerHTML = '<div class="empty"><div class="big">☁️</div>' +
+      '<div style="font-weight:700;color:var(--text)">共有機能が設定されていません</div></div>';
+    return;
+  }
+
+  el("main").innerHTML = '<div class="empty"><div class="big">⏳</div><div class="sm muted">読み込み中…</div></div>';
+  ensureFirebase(function(){
+    cloudTripRef(id).get().then(function(snap){
+      if(view.name !== "join" || view.id !== id) return;
+      if(!snap.exists){
+        el("main").innerHTML = '<div class="empty"><div class="big">😕</div>' +
+          '<div style="font-weight:700;color:var(--text)">この旅は見つかりませんでした</div>' +
+          '<div class="sm muted" style="margin-top:6px">リンクが間違っているか、削除された可能性があります</div></div>';
+        return;
+      }
+      var d = snap.data();
+      var lastName = localStorage.getItem("tabilog.myName") || "";
+      el("main").innerHTML =
+        '<div class="card" style="padding:18px;text-align:center;margin-top:10px">' +
+          '<div style="font-size:36px">🧳</div>' +
+          '<div style="font-weight:800;font-size:18px;margin-top:6px">'+esc(d.title)+'</div>' +
+          '<div class="sm muted">'+esc(d.destination||"")+'</div>' +
+        '</div>' +
+        '<label class="f" style="margin-top:16px"><span>あなたの名前</span>' +
+          '<input id="f-join-name" value="'+esc(lastName)+'" placeholder="例）たろう"></label>' +
+        '<button class="btn primary" style="width:100%;padding:12px" data-act="do-join" data-id="'+esc(id)+'">この旅に参加する</button>';
+    }).catch(function(){
+      if(view.name !== "join" || view.id !== id) return;
+      el("main").innerHTML = '<div class="empty"><div class="big">⚠️</div><div class="sm muted">読み込みに失敗しました</div></div>';
+    });
+  }, function(){
+    el("main").innerHTML = '<div class="empty"><div class="big">⚠️</div><div class="sm muted">通信に問題が発生しました。インターネット接続を確認してください</div></div>';
+  });
 }
 
 function renderRemind(){
@@ -380,6 +580,7 @@ function renderHome(){
             '<span class="chip">👥 '+t.members.length+'人</span>' +
             '<span class="chip">📝 '+t.logs.length+'</span>' +
             (total ? '<span class="chip">💴 '+yen(total)+'</span>' : '') +
+            (t.cloudId ? '<span class="chip">☁️ 共有中</span>' : '') +
           '</div>' +
         '</div></button>';
     });
@@ -567,17 +768,39 @@ function viewSettle(t){
 
 /* --- tab: 設定 --- */
 function viewSet(t){
+  var mine = myMemberId(t);
   var h = '<div class="section-title">メンバー</div><div class="card">';
   t.members.forEach(function(m){
     var used = t.expenses.some(function(e){
       return e.payerId===m.id || e.sharedBy.indexOf(m.id)>=0; });
+    var isMe = t.cloudId && mine === m.id;
     h += '<div class="item"><div class="avatar">'+esc(initials(m.name))+'</div>' +
-      '<div class="grow" style="font-weight:600">'+esc(m.name)+'</div>' +
+      '<div class="grow" style="font-weight:600">'+esc(m.name)+(isMe?' <span class="tiny muted">(あなた)</span>':'')+'</div>' +
+      (t.cloudId && !isMe ? '<button class="btn sm ghost" data-setme="'+m.id+'">自分</button>' : '') +
       (used ? '<span class="tiny muted">会計に使用中</span>'
             : '<button class="btn sm danger" data-delmem="'+m.id+'">削除</button>') +
       '</div>';
   });
   h += '</div><div style="margin-top:10px"><button class="btn" data-act="add-mem">＋ メンバーを追加</button></div>';
+
+  h += '<div class="section-title">友達と共有</div><div class="card" style="padding:16px">';
+  if(t.cloudId){
+    var joinUrl = location.href.split(/[?#]/)[0] + "?join=" + t.cloudId;
+    var joinMsg = "【旅ログ】「"+t.title+"」に招待されました\n" + joinUrl;
+    h += '<div class="sm" style="font-weight:600;margin-bottom:8px">この旅は共有中です。招待リンクを送るとメンバーが参加できます</div>' +
+      '<textarea readonly style="min-height:50px;font-size:12px">'+esc(joinUrl)+'</textarea>' +
+      '<div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn sm" data-act="copy-join" data-url="'+esc(joinUrl)+'">リンクをコピー</button>' +
+        '<a class="btn sm" style="text-decoration:none" href="'+lineShareUrl(joinMsg)+'" target="_blank" rel="noopener">LINEで送る</a>' +
+      '</div>' +
+      '<div class="note" style="margin-top:12px">このリンクを知っている人は誰でも参加・編集できます。信頼できる相手だけに送ってください。</div>';
+  } else if(cloudConfigured()){
+    h += '<div class="sm" style="font-weight:600;margin-bottom:8px">この旅を友達と共有できます</div>' +
+      '<button class="btn" data-act="upgrade-share">☁️ 友達と共有する</button>';
+  } else {
+    h += '<div class="sm muted">共有機能は未設定です</div>';
+  }
+  h += '</div>';
 
   h += '<div class="section-title">精算リマインド</div><div class="card" style="padding:16px">' +
     '<div class="sm" style="font-weight:600;margin-bottom:10px">未精算があるとき、LINE送信画面を自動で開くタイマーを設定できます</div>' +
@@ -617,7 +840,10 @@ function viewSet(t){
   h += '<div class="section-title">この旅</div>' +
     '<div class="row" style="gap:8px;flex-wrap:wrap">' +
     '<button class="btn" data-act="edit-trip">旅の情報を編集</button>' +
-    '<button class="btn danger" data-act="del-trip">この旅を削除</button></div>';
+    (t.cloudId
+      ? '<button class="btn danger" data-act="leave-trip">この旅から離れる</button>'
+      : '<button class="btn danger" data-act="del-trip">この旅を削除</button>') +
+    '</div>';
   return h;
 }
 
@@ -666,7 +892,14 @@ function formTrip(t){
           'style="width:38px;height:38px;padding:0;background:'+c+';border-color:'+c+'"></button>';
       }).join("") + '</div></label>' +
     (isNew ? '<label class="f"><span>メンバー（カンマ区切り）</span>' +
-      '<input id="f-mem" placeholder="例）自分, たろう, はなこ" value="自分"></label>' : '') +
+      '<input id="f-mem" placeholder="例）自分, たろう, はなこ" value="自分"></label>' +
+      '<div class="tiny muted" style="margin:-10px 0 14px">先頭のお名前があなたになります</div>' +
+      '<label class="f" style="display:flex;align-items:center;gap:8px;flex-direction:row">' +
+        '<input type="checkbox" id="f-share" style="width:auto" '+(cloudConfigured()?'':'disabled')+'>' +
+        '<span style="font-weight:600;font-size:14px">☁️ 友達と共有する（招待リンクで参加できます）</span>' +
+      '</label>' +
+      (cloudConfigured() ? '' : '<div class="tiny muted" style="margin-top:-8px">共有機能は未設定です</div>')
+      : '') +
     '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
     '<button class="btn primary" data-act="'+(isNew?"save-new-trip":"save-trip")+'">保存</button></div>'
   );
@@ -1011,8 +1244,25 @@ document.addEventListener("click", function(ev){
   el2 = ev.target.closest("[data-delmem]");
   if(el2){
     var t2 = curTrip();
-    t2.members = t2.members.filter(function(m){ return m.id !== el2.dataset.delmem; });
-    save(); render(); return;
+    if(t2.cloudId){
+      ensureFirebase(function(){
+        cloudTripRef(t2.cloudId).collection("members").doc(el2.dataset.delmem).delete().catch(function(){});
+      }, function(){ alert("通信に問題が発生しました。"); });
+    } else {
+      t2.members = t2.members.filter(function(m){ return m.id !== el2.dataset.delmem; });
+      save(); render();
+    }
+    return;
+  }
+  el2 = ev.target.closest("[data-setme]");
+  if(el2){
+    var t3 = curTrip();
+    var mine3 = {};
+    try{ mine3 = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}"); }catch(e){}
+    mine3[t3.cloudId] = el2.dataset.setme;
+    localStorage.setItem("tabilog.myMembers", JSON.stringify(mine3));
+    render();
+    return;
   }
 
   el2 = ev.target.closest("[data-act]");
@@ -1046,11 +1296,30 @@ function act(a, node){
     if(a === "save-new-trip"){
       var names = el("f-mem").value.split(/[,、]/).map(function(s){ return s.trim(); })
                     .filter(function(s){ return s; });
+      var shareEl = el("f-share");
+      var wantShare = !!(shareEl && shareEl.checked && cloudConfigured());
       var nt = Object.assign({ id:uid(), members:[], logs:[], expenses:[] }, data);
       nt.members = names.map(function(n){ return { id:uid(), name:n }; });
       db.trips.push(nt); save(); closeModal();
       go({ name:"trip", id:nt.id, tab:"log" });
+
+      if(wantShare){
+        nt.cloudId = nt.id;
+        if(nt.members[0]){
+          var mineNew = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
+          mineNew[nt.id] = nt.members[0].id;
+          localStorage.setItem("tabilog.myMembers", JSON.stringify(mineNew));
+        }
+        save();
+        cloudCreateTrip(nt, function(ok){
+          if(!ok){ nt.cloudId = null; alert("共有の設定に失敗しました。設定タブから再度お試しください。"); }
+          save(); syncViewCloud(); render();
+        });
+      }
     } else {
+      if(t.cloudId){
+        ensureFirebase(function(){ cloudTripRef(t.cloudId).update(data).catch(function(){}); }, function(){});
+      }
       Object.assign(t, data); save(); closeModal(); render();
     }
     return;
@@ -1099,29 +1368,53 @@ function act(a, node){
       cat: picked("cat"), photos: photos
     };
     var id = node.dataset.id;
-    var existing = id ? t.logs.filter(function(x){ return x.id===id; })[0] : null;
-    if(existing){ Object.assign(existing, l); }
-    else { l.id = uid(); t.logs.push(l); existing = l; }
 
     var amtEl = el("f-amt");
+    var expData = null;
     if(amtEl && t.members.length){
       var amt = Math.round(+amtEl.value);
       if(amt > 0){
         var payer = t.members.length > 1 ? (picked("payer") || defaultPayerId(t)) : t.members[0].id;
         var share = t.members.length > 1 ? picked("share") : [t.members[0].id];
         if(!share || !share.length) share = t.members.map(function(m){ return m.id; });
-        var expData = {
-          date: l.date, title: l.title || "記録の支出", amount: amt,
-          cat: "その他", payerId: payer, sharedBy: share, logId: existing.id
-        };
-        if(existing.expenseId && t.expenses.some(function(x){ return x.id === existing.expenseId; })){
-          Object.assign(t.expenses.filter(function(x){ return x.id === existing.expenseId; })[0], expData);
-        } else {
-          expData.id = uid();
-          existing.expenseId = expData.id;
-          t.expenses.push(expData);
-        }
+        expData = { date: l.date, title: l.title || "記録の支出", amount: amt,
+          cat: "その他", payerId: payer, sharedBy: share };
         t.lastPayerId = payer;
+      }
+    }
+
+    if(t.cloudId){
+      ensureFirebase(function(){
+        var ref = cloudTripRef(t.cloudId);
+        var logId = id || uid();
+        var existing = id ? t.logs.filter(function(x){ return x.id===id; })[0] : null;
+        var expenseId = existing ? existing.expenseId : null;
+
+        ref.collection("logs").doc(logId).set(l, { merge:true }).then(function(){
+          if(!expData) return;
+          if(expenseId){
+            return ref.collection("expenses").doc(expenseId).set(expData, { merge:true });
+          }
+          return ref.collection("expenses").add(expData).then(function(expRef){
+            return ref.collection("logs").doc(logId).set({ expenseId: expRef.id }, { merge:true });
+          });
+        }).catch(function(){ alert("保存に失敗しました。通信環境をご確認ください。"); });
+      }, function(){ alert("通信に問題が発生しました。"); });
+      closeModal();
+      return;
+    }
+
+    var existing = id ? t.logs.filter(function(x){ return x.id===id; })[0] : null;
+    if(existing){ Object.assign(existing, l); }
+    else { l.id = uid(); t.logs.push(l); existing = l; }
+
+    if(expData){
+      if(existing.expenseId && t.expenses.some(function(x){ return x.id === existing.expenseId; })){
+        Object.assign(t.expenses.filter(function(x){ return x.id === existing.expenseId; })[0], expData);
+      } else {
+        expData.id = uid();
+        existing.expenseId = expData.id;
+        t.expenses.push(expData);
       }
     }
 
@@ -1130,6 +1423,13 @@ function act(a, node){
   }
   if(a === "del-log"){
     if(!confirm("この記録を削除しますか？")) return;
+    if(t.cloudId){
+      ensureFirebase(function(){
+        cloudTripRef(t.cloudId).collection("logs").doc(node.dataset.id).delete().catch(function(){});
+      }, function(){ alert("通信に問題が発生しました。"); });
+      closeModal();
+      return;
+    }
     t.logs = t.logs.filter(function(x){ return x.id !== node.dataset.id; });
     save(); closeModal(); render(); return;
   }
@@ -1145,20 +1445,45 @@ function act(a, node){
     var e = { date: el("f-date").value, title: et, amount: amt,
               cat: picked("cat"), payerId: payer, sharedBy: share };
     var eid = node.dataset.id;
+    t.lastPayerId = payer;
+
+    if(t.cloudId){
+      ensureFirebase(function(){
+        var ref = cloudTripRef(t.cloudId).collection("expenses");
+        var p = eid ? ref.doc(eid).set(e, { merge:true }) : ref.add(e);
+        p.catch(function(){ alert("保存に失敗しました。"); });
+      }, function(){ alert("通信に問題が発生しました。"); });
+      closeModal();
+      return;
+    }
+
     if(eid){ Object.assign(t.expenses.filter(function(x){ return x.id===eid; })[0], e); }
     else { e.id = uid(); t.expenses.push(e); }
-    t.lastPayerId = payer;
     save(); closeModal(); render(); return;
   }
   if(a === "del-exp"){
     if(!confirm("この支出を削除しますか？")) return;
+    if(t.cloudId){
+      ensureFirebase(function(){
+        cloudTripRef(t.cloudId).collection("expenses").doc(node.dataset.id).delete().catch(function(){});
+      }, function(){ alert("通信に問題が発生しました。"); });
+      closeModal();
+      return;
+    }
     t.expenses = t.expenses.filter(function(x){ return x.id !== node.dataset.id; });
     save(); closeModal(); render(); return;
   }
 
   if(a === "add-mem"){
     var n = prompt("メンバーの名前");
-    if(n && n.trim()){ t.members.push({ id:uid(), name:n.trim() }); save(); render(); }
+    if(!n || !n.trim()) return;
+    if(t.cloudId){
+      ensureFirebase(function(){
+        cloudTripRef(t.cloudId).collection("members").add({ name:n.trim() }).catch(function(){ alert("追加に失敗しました。"); });
+      }, function(){ alert("通信に問題が発生しました。"); });
+    } else {
+      t.members.push({ id:uid(), name:n.trim() }); save(); render();
+    }
     return;
   }
 
@@ -1206,9 +1531,68 @@ function act(a, node){
   }
 
   if(a === "del-trip"){
+    if(t.cloudId){ alert("共有中の旅は「この旅から離れる」から行ってください。"); return; }
     if(!confirm("「"+t.title+"」を削除します。記録と会計もすべて消えます。よろしいですか？")) return;
     db.trips = db.trips.filter(function(x){ return x.id !== t.id; });
     save(); go({ name:"home" }); return;
+  }
+  if(a === "leave-trip"){
+    if(!confirm("「"+t.title+"」から離れます。自分の端末からは見えなくなりますが、他のメンバーのデータは残ります。よろしいですか？")) return;
+    cloudUnsubscribeAll();
+    db.trips = db.trips.filter(function(x){ return x.id !== t.id; });
+    save(); go({ name:"home" }); return;
+  }
+
+  if(a === "copy-join"){
+    var joinU = node.dataset.url;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(joinU)
+        .then(function(){ alert("コピーしました。"); }).catch(function(){});
+    }
+    return;
+  }
+  if(a === "upgrade-share"){
+    if(!cloudConfigured()){ alert("共有機能が設定されていません。"); return; }
+    if(!confirm("この旅を友達と共有できるようにします。よろしいですか？")) return;
+    t.cloudId = t.id;
+    var mineUp = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
+    if(t.members[0] && !mineUp[t.id]) mineUp[t.id] = t.members[0].id;
+    localStorage.setItem("tabilog.myMembers", JSON.stringify(mineUp));
+    save(); render();
+    cloudUpgradeTrip(t, function(ok){
+      if(!ok){ alert("共有の設定に失敗しました。"); t.cloudId = null; }
+      save(); syncViewCloud(); render();
+    });
+    return;
+  }
+  if(a === "do-join"){
+    var joinName = (el("f-join-name").value || "").trim();
+    if(!joinName){ alert("名前を入力してください。"); return; }
+    var cloudId = node.dataset.id;
+    localStorage.setItem("tabilog.myName", joinName);
+    ensureFirebase(function(){
+      var ref = cloudTripRef(cloudId);
+      ref.get().then(function(snap){
+        if(!snap.exists){ alert("この旅は見つかりませんでした。"); return; }
+        var d = snap.data();
+        ref.collection("members").add({ name: joinName }).then(function(memberDoc){
+          var mineJoin = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
+          mineJoin[cloudId] = memberDoc.id;
+          localStorage.setItem("tabilog.myMembers", JSON.stringify(mineJoin));
+
+          if(!db.trips.some(function(x){ return x.id === cloudId; })){
+            db.trips.push({
+              id: cloudId, cloudId: cloudId, title: d.title, destination: d.destination,
+              startDate: d.startDate, endDate: d.endDate, color: d.color,
+              members: [], logs: [], expenses: []
+            });
+            save();
+          }
+          go({ name:"trip", id: cloudId, tab:"log" });
+        });
+      }).catch(function(){ alert("参加に失敗しました。"); });
+    }, function(){ alert("通信に問題が発生しました。"); });
+    return;
   }
 
   if(a === "export"){
@@ -1242,6 +1626,7 @@ function act(a, node){
 }
 
 render();
+syncViewCloud();
 
 if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
   navigator.serviceWorker.register("sw.js").catch(function(){});
