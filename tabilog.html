@@ -300,33 +300,35 @@ function ensureFirebase(cb, errCb){
     "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js",
     "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"
   ];
-  var i = 0;
-  function fail(){ window._fbLoading = null; errCb && errCb(); }
-  function loadNext(){
-    if(i >= srcs.length){
-      try{
-        CLOUD.app = firebase.initializeApp(window.TABILOG_FIREBASE_CONFIG);
-        CLOUD.auth = firebase.auth();
-        CLOUD.db = firebase.firestore();
-        try{ CLOUD.db.enablePersistence({ synchronizeTabs:true }).catch(function(){}); }catch(e){}
-        CLOUD.auth.onAuthStateChanged(function(user){
-          if(user && !CLOUD.ready){
-            CLOUD.ready = true;
-            var cbs = window._fbLoading; window._fbLoading = null;
-            if(cbs) cbs.forEach(function(f){ f(); });
-          }
-        });
-        CLOUD.auth.signInAnonymously().catch(fail);
-      }catch(e){ fail(); }
-      return;
-    }
+  var failed = false;
+  function fail(){ if(failed) return; failed = true; window._fbLoading = null; errCb && errCb(); }
+  function initFirebase(){
+    try{
+      CLOUD.app = firebase.initializeApp(window.TABILOG_FIREBASE_CONFIG);
+      CLOUD.auth = firebase.auth();
+      CLOUD.db = firebase.firestore();
+      try{ CLOUD.db.enablePersistence({ synchronizeTabs:true }).catch(function(){}); }catch(e){}
+      CLOUD.auth.onAuthStateChanged(function(user){
+        if(user && !CLOUD.ready){
+          CLOUD.ready = true;
+          var cbs = window._fbLoading; window._fbLoading = null;
+          if(cbs) cbs.forEach(function(f){ f(); });
+        }
+      });
+      CLOUD.auth.signInAnonymously().catch(fail);
+    }catch(e){ fail(); }
+  }
+  // async=false on dynamically-inserted scripts: browser fetches all three in
+  // parallel but still executes them in insertion order (app -> auth -> firestore).
+  var remaining = srcs.length;
+  srcs.forEach(function(src){
     var s = document.createElement("script");
-    s.src = srcs[i];
-    s.onload = function(){ i++; loadNext(); };
+    s.src = src;
+    s.async = false;
+    s.onload = function(){ remaining--; if(remaining === 0) initFirebase(); };
     s.onerror = fail;
     document.head.appendChild(s);
-  }
-  loadNext();
+  });
 }
 
 function cloudTripRef(cloudId){ return CLOUD.db.collection("trips").doc(cloudId); }
@@ -912,13 +914,31 @@ function formLog(t, log){
   window._photos = (log.photos || []).slice();
   window._lastRawFile = null;
 
-  if(isNew){
-    var hasMembers = t.members.length > 0;
-    var multiMembers = t.members.length > 1;
-    var mem = t.members.map(function(m){ return {v:m.id, t:m.name}; });
-    var defPayer = defaultPayerId(t);
-    var defShare = t.members.map(function(m){ return m.id; });
+  var hasMembers = t.members.length > 0;
+  var multiMembers = t.members.length > 1;
+  var mem = t.members.map(function(m){ return {v:m.id, t:m.name}; });
+  var linkedExp = log.expenseId ? t.expenses.filter(function(x){ return x.id === log.expenseId; })[0] : null;
+  var defPayer = linkedExp ? linkedExp.payerId : defaultPayerId(t);
+  var defShare = linkedExp ? linkedExp.sharedBy : t.members.map(function(m){ return m.id; });
+  var defAmt = linkedExp ? linkedExp.amount : "";
 
+  function amountBlock(){
+    if(!hasMembers) return "";
+    return '<label class="f"><span>💴 使った金額（円・任意）</span>' +
+        '<input type="number" inputmode="numeric" id="f-amt" value="'+esc(defAmt)+'" placeholder="支払った場合だけ入力"></label>' +
+      '<div id="f-ocr-wrap" style="margin:-8px 0 14px;'+(window._photos.length?'':'display:none')+'">' +
+        '<button type="button" class="btn sm" data-act="ocr-receipt">🧾 写真から金額を読み取る</button>' +
+        '<div id="f-ocr-status" class="tiny muted" style="margin-top:6px"></div>' +
+      '</div>' +
+      (multiMembers ?
+        '<div id="f-split-box" style="display:'+((+defAmt)>0?"":"none")+'">' +
+          '<label class="f"><span>払った人</span>' + pickRow("payer", mem, defPayer, false) + '</label>' +
+          '<label class="f"><span>割り勘する人</span>' + pickRow("share", mem, defShare, true) + '</label>' +
+        '</div>'
+      : '');
+  }
+
+  if(isNew){
     modal(
       '<h2>記録する</h2>' +
       '<div class="quickshot" data-act="pick-photo" id="f-shot">' +
@@ -926,23 +946,10 @@ function formLog(t, log){
           '<div class="quickshot-ph"><div style="font-size:30px">📷</div>' +
           '<div class="tiny">タップして写真を追加</div></div>') +
       '</div>' +
-      '<input type="file" id="f-photo" accept="image/*" capture="environment" style="display:none">' +
+      '<input type="file" id="f-photo" accept="image/*" style="display:none">' +
       '<label class="f" style="margin-top:14px"><span>今どうしてる？</span>' +
         '<input id="f-title" autocomplete="off" value="'+esc(log.title)+'" placeholder="例）美ら海水族館に到着"></label>' +
-      (hasMembers ?
-        '<label class="f"><span>💴 使った金額（円・任意）</span>' +
-          '<input type="number" inputmode="numeric" id="f-amt" placeholder="支払った場合だけ入力"></label>' +
-        '<div id="f-ocr-wrap" style="margin:-8px 0 14px;'+(window._photos.length?'':'display:none')+'">' +
-          '<button type="button" class="btn sm" data-act="ocr-receipt">🧾 写真から金額を読み取る</button>' +
-          '<div id="f-ocr-status" class="tiny muted" style="margin-top:6px"></div>' +
-        '</div>' +
-        (multiMembers ?
-          '<div id="f-split-box" style="display:none">' +
-            '<label class="f"><span>払った人</span>' + pickRow("payer", mem, defPayer, false) + '</label>' +
-            '<label class="f"><span>割り勘する人</span>' + pickRow("share", mem, defShare, true) + '</label>' +
-          '</div>'
-        : '')
-      : '') +
+      amountBlock() +
       '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
       '<button class="btn primary" data-act="save-log" data-id="">記録する</button></div>' +
       '<details class="more"><summary>詳しく設定</summary>' +
@@ -956,14 +963,6 @@ function formLog(t, log){
         '<label class="f"><span>メモ</span><textarea id="f-memo" placeholder="もう少し詳しく">'+esc(log.memo)+'</textarea></label>' +
       '</details>'
     );
-
-    var amtEl = el("f-amt");
-    if(amtEl){
-      amtEl.addEventListener("input", function(){
-        var box = el("f-split-box");
-        if(box) box.style.display = (+amtEl.value > 0) ? "" : "none";
-      });
-    }
   } else {
     modal(
       '<h2>記録を編集</h2>' +
@@ -976,6 +975,7 @@ function formLog(t, log){
       '<label class="f"><span>カテゴリ</span>' + pickRow("cat", LOG_CATS.map(function(c){
         return {v:c,t:c}; }), log.cat, false) + '</label>' +
       '<label class="f"><span>メモ</span><textarea id="f-memo" placeholder="感じたこと、おすすめポイントなど">'+esc(log.memo)+'</textarea></label>' +
+      amountBlock() +
       '<label class="f"><span>写真</span>' +
         '<input type="file" id="f-photo" accept="image/*" multiple>' +
         '<div class="shots" id="f-shots"></div>' +
@@ -986,6 +986,14 @@ function formLog(t, log){
         '<button class="btn primary" data-act="save-log" data-id="'+log.id+'">保存</button></div>'
     );
     drawShots();
+  }
+
+  var amtEl = el("f-amt");
+  if(amtEl){
+    amtEl.addEventListener("input", function(){
+      var box = el("f-split-box");
+      if(box) box.style.display = (+amtEl.value > 0) ? "" : "none";
+    });
   }
 
   var fp = el("f-photo");
@@ -1391,13 +1399,21 @@ function act(a, node){
         var expenseId = existing ? existing.expenseId : null;
 
         ref.collection("logs").doc(logId).set(l, { merge:true }).then(function(){
-          if(!expData) return;
-          if(expenseId){
-            return ref.collection("expenses").doc(expenseId).set(expData, { merge:true });
+          if(expData){
+            if(expenseId){
+              return ref.collection("expenses").doc(expenseId).set(expData, { merge:true });
+            }
+            return ref.collection("expenses").add(expData).then(function(expRef){
+              return ref.collection("logs").doc(logId).set({ expenseId: expRef.id }, { merge:true });
+            });
           }
-          return ref.collection("expenses").add(expData).then(function(expRef){
-            return ref.collection("logs").doc(logId).set({ expenseId: expRef.id }, { merge:true });
-          });
+          if(expenseId){
+            // 金額欄が空にされた: 紐づく支出を削除
+            return ref.collection("expenses").doc(expenseId).delete().then(function(){
+              return ref.collection("logs").doc(logId).set(
+                { expenseId: firebase.firestore.FieldValue.delete() }, { merge:true });
+            });
+          }
         }).catch(function(){ alert("保存に失敗しました。通信環境をご確認ください。"); });
       }, function(){ alert("通信に問題が発生しました。"); });
       closeModal();
@@ -1416,6 +1432,10 @@ function act(a, node){
         existing.expenseId = expData.id;
         t.expenses.push(expData);
       }
+    } else if(amtEl && existing.expenseId){
+      // 金額欄が空にされた: 紐づく支出を削除
+      t.expenses = t.expenses.filter(function(x){ return x.id !== existing.expenseId; });
+      existing.expenseId = null;
     }
 
     if(save()) { closeModal(); render(); }
@@ -1570,28 +1590,34 @@ function act(a, node){
     if(!joinName){ alert("名前を入力してください。"); return; }
     var cloudId = node.dataset.id;
     localStorage.setItem("tabilog.myName", joinName);
+    node.disabled = true; node.textContent = "参加中…";
+    function resetJoinBtn(){ node.disabled = false; node.textContent = "この旅に参加する"; }
+
     ensureFirebase(function(){
       var ref = cloudTripRef(cloudId);
-      ref.get().then(function(snap){
-        if(!snap.exists){ alert("この旅は見つかりませんでした。"); return; }
+      // 旅の情報取得とメンバー追加を並行して行い、往復を1回分減らす
+      Promise.all([
+        ref.get(),
+        ref.collection("members").add({ name: joinName })
+      ]).then(function(results){
+        var snap = results[0], memberDoc = results[1];
+        if(!snap.exists){ alert("この旅は見つかりませんでした。"); resetJoinBtn(); return; }
         var d = snap.data();
-        ref.collection("members").add({ name: joinName }).then(function(memberDoc){
-          var mineJoin = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
-          mineJoin[cloudId] = memberDoc.id;
-          localStorage.setItem("tabilog.myMembers", JSON.stringify(mineJoin));
+        var mineJoin = JSON.parse(localStorage.getItem("tabilog.myMembers") || "{}");
+        mineJoin[cloudId] = memberDoc.id;
+        localStorage.setItem("tabilog.myMembers", JSON.stringify(mineJoin));
 
-          if(!db.trips.some(function(x){ return x.id === cloudId; })){
-            db.trips.push({
-              id: cloudId, cloudId: cloudId, title: d.title, destination: d.destination,
-              startDate: d.startDate, endDate: d.endDate, color: d.color,
-              members: [], logs: [], expenses: []
-            });
-            save();
-          }
-          go({ name:"trip", id: cloudId, tab:"log" });
-        });
-      }).catch(function(){ alert("参加に失敗しました。"); });
-    }, function(){ alert("通信に問題が発生しました。"); });
+        if(!db.trips.some(function(x){ return x.id === cloudId; })){
+          db.trips.push({
+            id: cloudId, cloudId: cloudId, title: d.title, destination: d.destination,
+            startDate: d.startDate, endDate: d.endDate, color: d.color,
+            members: [], logs: [], expenses: []
+          });
+          save();
+        }
+        go({ name:"trip", id: cloudId, tab:"log" });
+      }).catch(function(){ alert("参加に失敗しました。"); resetJoinBtn(); });
+    }, function(){ alert("通信に問題が発生しました。"); resetJoinBtn(); });
     return;
   }
 
