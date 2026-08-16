@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>旅ログ — 旅の記録と割り勘</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#2f6df6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="旅ログ">
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --line:#e2e5ea;
+  --text:#14171c; --muted:#6b7280; --accent:#2f6df6; --accent-soft:#e7efff;
+  --pos:#0f9d58; --neg:#e5484d; --warn:#c2790a;
+  --shadow:0 1px 2px rgba(16,24,40,.06), 0 6px 18px rgba(16,24,40,.06);
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e1116; --surface:#161a21; --surface-2:#1e232c; --line:#2a303a;
+    --text:#e8ebf0; --muted:#9aa3b2; --accent:#5b8cff; --accent-soft:#1c2740;
+    --pos:#3ecf8e; --neg:#ff6b6f; --warn:#e0a33a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN",Meiryo,system-ui,sans-serif;
+  font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 16px 120px}
+header.app{
+  position:sticky;top:0;z-index:20;background:var(--bg);
+  border-bottom:1px solid var(--line);
+}
+.appbar{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.appbar h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appbar .sub{font-size:12px;color:var(--muted);font-weight:500}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn{
+  border:1px solid var(--line);background:var(--surface);border-radius:10px;
+  padding:8px 14px;font-weight:600;font-size:14px;transition:.15s;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent;padding:8px 10px}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.danger{color:var(--neg)}
+.btn.sm{padding:5px 10px;font-size:13px;border-radius:8px}
+.icon-btn{border:none;background:transparent;font-size:20px;line-height:1;padding:6px 8px;border-radius:8px}
+.icon-btn:hover{background:var(--surface-2)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.tabs{display:flex;gap:4px;background:var(--surface-2);padding:4px;border-radius:12px;margin:14px 0}
+.tabs button{flex:1;border:none;background:transparent;padding:8px 4px;border-radius:9px;
+  font-weight:600;font-size:13.5px;color:var(--muted)}
+.tabs button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.empty{text-align:center;color:var(--muted);padding:52px 20px}
+.empty .big{font-size:40px;margin-bottom:8px}
+.section-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.06em;
+  margin:22px 0 8px;text-transform:uppercase}
+.row{display:flex;align-items:center;gap:12px}
+.grow{flex:1;min-width:0}
+.muted{color:var(--muted)}
+.tiny{font-size:12px}
+.sm{font-size:13px}
+.num{font-variant-numeric:tabular-nums}
+.pos{color:var(--pos)} .neg{color:var(--neg)}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* trip cards */
+.trip{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);
+  border-radius:var(--r);padding:0;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow);transition:.15s}
+.trip:hover{transform:translateY(-1px);border-color:var(--accent)}
+.trip .band{height:6px;background:var(--accent)}
+.trip .body{padding:14px 16px}
+.trip h3{margin:0 0 2px;font-size:17px}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface-2);
+  border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+
+/* timeline */
+.day{margin-top:20px}
+.day-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.day-head .d{font-weight:800;font-size:15px}
+.tl{position:relative;padding-left:22px}
+.tl:before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.log{position:relative;margin-bottom:10px;padding:12px 14px;background:var(--surface);
+  border:1px solid var(--line);border-radius:12px}
+.log:before{content:"";position:absolute;left:-20px;top:16px;width:10px;height:10px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 0 3px var(--bg)}
+.log h4{margin:0;font-size:15px}
+.log .meta{font-size:12px;color:var(--muted);margin-top:2px}
+.log .memo{margin-top:6px;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.shots{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.shots img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
+
+/* list rows */
+.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:none}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;
+  background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:13px;flex:0 0 auto}
+.bar{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--accent)}
+
+/* settle */
+.pay{display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pay:last-child{border-bottom:none}
+.arrow{color:var(--muted);font-weight:700}
+
+/* fab */
+.fab{position:fixed;right:max(16px,calc(50vw - 380px + 16px));bottom:22px;z-index:15;
+  background:var(--accent);color:#fff;border:none;border-radius:999px;padding:14px 22px;
+  font-weight:700;font-size:15px;box-shadow:0 8px 24px rgba(47,109,246,.4)}
+.fab:hover{filter:brightness(1.08)}
+
+/* modal */
+.mask{position:fixed;inset:0;background:rgba(9,12,18,.55);z-index:50;display:flex;
+  align-items:flex-end;justify-content:center;padding:0}
+@media(min-width:640px){.mask{align-items:center;padding:24px}}
+.sheet{background:var(--surface);width:100%;max-width:560px;max-height:92vh;overflow:auto;
+  border-radius:18px 18px 0 0;padding:20px;box-shadow:var(--shadow)}
+@media(min-width:640px){.sheet{border-radius:18px}}
+.sheet h2{margin:0 0 16px;font-size:18px}
+label.f{display:block;margin-bottom:14px}
+label.f>span{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:5px}
+input,select,textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
+  background:var(--surface-2);color:var(--text);font:inherit;
+}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+textarea{min-height:90px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.picks{display:flex;flex-wrap:wrap;gap:8px}
+.pick{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;
+  padding:7px 14px;font-size:13.5px;font-weight:600}
+.pick.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.actions{display:flex;gap:10px;margin-top:20px}
+.actions .btn{flex:1;padding:11px}
+.quickshot{width:100%;aspect-ratio:4/3;border:2px dashed var(--line);border-radius:14px;
+  background:var(--surface-2);display:flex;align-items:center;justify-content:center;
+  overflow:hidden;cursor:pointer;margin-top:4px;transition:.15s}
+.quickshot:hover{border-color:var(--accent)}
+.quickshot img{width:100%;height:100%;object-fit:cover}
+.quickshot-ph{text-align:center;color:var(--muted)}
+details.more{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+details.more summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--muted);list-style:none}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary:before{content:"▸ "}
+details.more[open] summary:before{content:"▾ "}
+details.more[open]{padding-bottom:2px}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:80;display:grid;place-items:center;padding:20px}
+.lightbox img{max-width:100%;max-height:100%;border-radius:10px}
+.note{background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="appbar" id="appbar"></div>
+</header>
+<main class="wrap" id="main"></main>
+<div id="fab"></div>
+<div id="overlay"></div>
+
+<script>
+"use strict";
+/* ---------------- storage ---------------- */
+var KEY = "tabilog.v1";
+var db = { trips: [] };
+try { var raw = localStorage.getItem(KEY); if (raw) db = JSON.parse(raw); } catch (e) {}
+if (!db || !db.trips) db = { trips: [] };
+
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(db)); return true; }
+  catch(e){
+    alert("保存できませんでした。保存容量がいっぱいの可能性があります。\n設定タブからバックアップを書き出し、写真を減らしてください。");
+    return false;
+  }
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+/* ---------------- helpers ---------------- */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function yen(n){ return "¥" + Math.round(n).toLocaleString("ja-JP"); }
+function todayStr(){ var d=new Date(); return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate()); }
+function nowTime(){ var d=new Date(); return p2(d.getHours())+":"+p2(d.getMinutes()); }
+function p2(n){ return (n<10?"0":"")+n; }
+var WD = ["日","月","火","水","木","金","土"];
+function fmtDate(s){
+  if(!s) return "日付なし";
+  var p = s.split("-"); if(p.length<3) return s;
+  var d = new Date(+p[0], +p[1]-1, +p[2]);
+  return (+p[1]) + "/" + (+p[2]) + "(" + WD[d.getDay()] + ")";
+}
+function fmtRange(a,b){
+  if(!a && !b) return "日程未定";
+  if(a && b && a!==b) return fmtDate(a) + " → " + fmtDate(b);
+  return fmtDate(a||b);
+}
+function daysBetween(a,b){
+  if(!a||!b) return 0;
+  return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+function initials(name){ return (name||"?").trim().slice(0,2); }
+function el(id){ return document.getElementById(id); }
+
+/* ---------------- money core ---------------- */
+// 1件の支出を、対象メンバーに1円単位で公平に分割（端数は先頭から1円ずつ）
+function splitShares(amount, ids){
+  var out = {}, n = ids.length;
+  if(!n) return out;
+  var base = Math.floor(amount / n), rem = amount - base * n;
+  ids.forEach(function(id, i){ out[id] = base + (i < rem ? 1 : 0); });
+  return out;
+}
+function balances(trip){
+  var b = {};
+  trip.members.forEach(function(m){ b[m.id] = 0; });
+  trip.expenses.forEach(function(e){
+    if(b[e.payerId] === undefined) return;
+    b[e.payerId] += e.amount;
+    var ids = e.sharedBy.filter(function(id){ return b[id] !== undefined; });
+    var sh = splitShares(e.amount, ids);
+    for(var id in sh) b[id] -= sh[id];
+  });
+  return b; // >0 = 受け取る / <0 = 支払う
+}
+// 送金回数が最小になるよう貪欲にマッチング
+function settlements(trip){
+  var b = balances(trip), cred = [], debt = [];
+  trip.members.forEach(function(m){
+    var v = b[m.id];
+    if(v > 0) cred.push({ id:m.id, v:v });
+    else if(v < 0) debt.push({ id:m.id, v:-v });
+  });
+  cred.sort(function(x,y){ return y.v - x.v; });
+  debt.sort(function(x,y){ return y.v - x.v; });
+  var out = [], i = 0, j = 0;
+  while(i < debt.length && j < cred.length){
+    var amt = Math.min(debt[i].v, cred[j].v);
+    if(amt > 0) out.push({ from:debt[i].id, to:cred[j].id, amount:amt });
+    debt[i].v -= amt; cred[j].v -= amt;
+    if(debt[i].v === 0) i++;
+    if(cred[j].v === 0) j++;
+  }
+  return out;
+}
+function tripTotal(trip){
+  return trip.expenses.reduce(function(s,e){ return s + e.amount; }, 0);
+}
+function memberName(trip, id){
+  var m = trip.members.filter(function(x){ return x.id === id; })[0];
+  return m ? m.name : "（削除済み）";
+}
+function defaultPayerId(trip){
+  if(trip.lastPayerId && trip.members.some(function(m){ return m.id === trip.lastPayerId; })) return trip.lastPayerId;
+  return trip.members[0] ? trip.members[0].id : "";
+}
+function lineShareUrl(text){
+  return "https://line.me/R/msg/text/?" + encodeURIComponent(text);
+}
+
+/* ---------------- reminder scheduling (Windows タスクスケジューラ用) ---------------- */
+function remindTaskName(t){ return "TabiLog_" + t.id; }
+function remindUrlFor(t){
+  var base = location.href.split(/[?#]/)[0];
+  return base + "?remind=" + t.id;
+}
+function buildRemindCmd(t, mode, time){
+  var name = remindTaskName(t);
+  var url = remindUrlFor(t);
+  var tr = 'cmd /c start \\"\\" \\"' + url + '\\"';
+  if(mode === "daily"){
+    return 'schtasks /create /tn "'+name+'" /tr "'+tr+'" /sc DAILY /st '+time+' /f';
+  }
+  var d = new Date((t.endDate || todayStr()) + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  var ds = d.getFullYear() + "/" + p2(d.getMonth()+1) + "/" + p2(d.getDate());
+  return 'schtasks /create /tn "'+name+'" /tr "'+tr+'" /sc ONCE /sd '+ds+' /st '+time+' /f';
+}
+function buildRemindDeleteCmd(t){
+  return 'schtasks /delete /tn "'+remindTaskName(t)+'" /f';
+}
+
+/* ---------------- routing ---------------- */
+var _qp = new URLSearchParams(location.search);
+var _remindTripId = _qp.get("remind");
+var view = _remindTripId ? { name:"remind", id:_remindTripId } : { name:"home" };
+function go(v){
+  if(location.search) { try{ history.replaceState(null, "", location.pathname); }catch(e){} }
+  view = v; render(); window.scrollTo(0,0);
+}
+function curTrip(){ return db.trips.filter(function(t){ return t.id === view.id; })[0]; }
+
+var LOG_CATS = ["観光","食事","宿泊","移動","買い物","その他"];
+var EXP_CATS = ["食事","交通","宿泊","観光","買い物","その他"];
+var COLORS = ["#2f6df6","#e5484d","#0f9d58","#c2790a","#8b5cf6","#0891b2"];
+
+/* ---------------- render ---------------- */
+function render(){
+  if(view.name === "remind"){ renderRemind(); return; }
+  if(view.name === "home") renderHome();
+  else if(view.name === "trip"){
+    if(!curTrip()){ go({name:"home"}); return; }
+    renderTrip();
+  }
+}
+
+function renderRemind(){
+  var t = db.trips.filter(function(x){ return x.id === view.id; })[0];
+  if(!t){ go({ name:"home" }); return; }
+  el("appbar").innerHTML = '<div class="grow"><h1>🔔 精算リマインド</h1><div class="sub">'+esc(t.title)+'</div></div>';
+
+  var s = settlements(t);
+  var h = "";
+  if(!s.length){
+    h = '<div class="empty"><div class="big">✅</div>' +
+      '<div style="font-weight:700;color:var(--text)">精算は完了しています</div></div>';
+  } else {
+    var allMsg = "【"+t.title+"】精算のお願い\n" + s.map(function(x){
+      return "・"+memberName(t,x.from)+" → "+memberName(t,x.to)+" "+yen(x.amount);
+    }).join("\n");
+    h += '<div class="card">';
+    s.forEach(function(x){
+      var msg = "【"+t.title+"】精算のお願い\n"+memberName(t,x.from)+"さんから"+memberName(t,x.to)+
+        "さんへ "+yen(x.amount)+" をお願いします🙏";
+      h += '<div class="pay">' +
+        '<div class="avatar">'+esc(initials(memberName(t,x.from)))+'</div>' +
+        '<span style="font-weight:600">'+esc(memberName(t,x.from))+'</span>' +
+        '<span class="arrow">→</span>' +
+        '<div class="avatar">'+esc(initials(memberName(t,x.to)))+'</div>' +
+        '<span style="font-weight:600">'+esc(memberName(t,x.to))+'</span>' +
+        '<span class="grow"></span>' +
+        '<span class="num" style="font-weight:800;font-size:17px">'+yen(x.amount)+'</span>' +
+        '<a class="btn sm" style="text-decoration:none" href="'+lineShareUrl(msg)+'" target="_blank" rel="noopener">LINEで送る</a>' +
+      '</div>';
+    });
+    h += '</div><div style="margin-top:10px"><a class="btn primary" style="text-decoration:none;display:inline-block" ' +
+      'href="'+lineShareUrl(allMsg)+'" target="_blank" rel="noopener">📱 まとめてLINEで送る</a></div>';
+  }
+  h += '<div style="margin-top:18px"><button class="btn" data-act="open-trip" data-id="'+t.id+'">旅ログを開く</button></div>';
+  el("main").innerHTML = h;
+  el("fab").innerHTML = "";
+}
+
+function renderHome(){
+  el("appbar").innerHTML =
+    '<div class="grow"><h1>旅ログ</h1><div class="sub">' +
+    db.trips.length + ' 件の旅</div></div>';
+
+  var h = "";
+  if(!db.trips.length){
+    h = '<div class="empty"><div class="big">🧳</div>' +
+        '<div style="font-weight:700;color:var(--text)">まだ旅がありません</div>' +
+        '<div class="sm" style="margin-top:6px">右下のボタンから最初の旅をつくりましょう</div></div>';
+  } else {
+    var sorted = db.trips.slice().sort(function(a,b){
+      return (b.startDate||"") < (a.startDate||"") ? -1 : 1;
+    });
+    sorted.forEach(function(t){
+      var total = tripTotal(t);
+      var nd = daysBetween(t.startDate, t.endDate) + 1;
+      h += '<button class="trip" data-open="'+t.id+'">' +
+        '<div class="band" style="background:'+esc(t.color||COLORS[0])+'"></div>' +
+        '<div class="body">' +
+          '<h3>'+esc(t.title)+'</h3>' +
+          '<div class="sm muted trunc">'+esc(t.destination||"")+'</div>' +
+          '<div class="chips">' +
+            '<span class="chip">📅 '+fmtRange(t.startDate,t.endDate)+(nd>1?" ・"+nd+"日間":"")+'</span>' +
+            '<span class="chip">👥 '+t.members.length+'人</span>' +
+            '<span class="chip">📝 '+t.logs.length+'</span>' +
+            (total ? '<span class="chip">💴 '+yen(total)+'</span>' : '') +
+          '</div>' +
+        '</div></button>';
+    });
+  }
+  el("main").innerHTML = h;
+  el("fab").innerHTML = '<button class="fab" data-act="new-trip">＋ 新しい旅</button>';
+}
+
+function renderTrip(){
+  var t = curTrip();
+  var tab = view.tab || "log";
+  el("appbar").innerHTML =
+    '<button class="icon-btn" data-act="home" title="一覧へ">←</button>' +
+    '<div class="grow"><h1>'+esc(t.title)+'</h1>' +
+    '<div class="sub">'+fmtRange(t.startDate,t.endDate)+'</div></div>' +
+    '<button class="icon-btn" data-act="edit-trip" title="旅の設定">⚙</button>';
+
+  var tabs = [["log","記録"],["exp","会計"],["settle","精算"],["set","設定"]];
+  var h = '<div class="tabs">' + tabs.map(function(x){
+      return '<button data-tab="'+x[0]+'" class="'+(tab===x[0]?"on":"")+'">'+x[1]+'</button>';
+    }).join("") + '</div>';
+
+  var showBanner = t.endDate && t.endDate < todayStr() && !t.photoExportDismissed &&
+    t.logs.some(function(l){ return l.photos && l.photos.length; });
+  if(showBanner){
+    h += '<div class="card" style="padding:14px;margin-bottom:14px;border-color:var(--accent)">' +
+      '<div class="row" style="gap:10px">' +
+        '<div style="font-size:22px">🖼</div>' +
+        '<div class="grow"><div style="font-weight:700">旅が終わりました</div>' +
+        '<div class="sm muted">写真をまとめて書き出して、LINEのアルバムに追加できます</div></div>' +
+      '</div>' +
+      '<div class="row" style="gap:8px;margin-top:10px">' +
+        '<button class="btn sm primary" data-act="export-photos">ZIPで書き出す</button>' +
+        '<button class="btn sm ghost" data-act="dismiss-photo-banner">閉じる</button>' +
+      '</div></div>';
+  }
+
+  if(tab === "log") h += viewLog(t);
+  else if(tab === "exp") h += viewExp(t);
+  else if(tab === "settle") h += viewSettle(t);
+  else h += viewSet(t);
+
+  el("main").innerHTML = h;
+  el("fab").innerHTML =
+    tab === "log" ? '<button class="fab" data-act="new-log">＋ 記録</button>' :
+    tab === "exp" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
+}
+
+/* --- tab: 記録 --- */
+function viewLog(t){
+  if(!t.logs.length) return '<div class="empty"><div class="big">📍</div>' +
+    '<div style="font-weight:700;color:var(--text)">記録がありません</div>' +
+    '<div class="sm" style="margin-top:6px">訪れた場所や思い出を残しましょう</div></div>';
+
+  var byDate = {};
+  t.logs.forEach(function(l){ (byDate[l.date||""] = byDate[l.date||""] || []).push(l); });
+  var dates = Object.keys(byDate).sort();
+  var h = "";
+  dates.forEach(function(d){
+    var n = t.startDate && d ? daysBetween(t.startDate, d) + 1 : 0;
+    byDate[d].sort(function(a,b){ return (a.time||"99") < (b.time||"99") ? -1 : 1; });
+    h += '<div class="day"><div class="day-head">' +
+      (n > 0 ? '<span class="d">Day '+n+'</span>' : '') +
+      '<span class="sm muted">'+fmtDate(d)+'</span></div><div class="tl">';
+    byDate[d].forEach(function(l){
+      var linkedExp = l.expenseId ? t.expenses.filter(function(x){ return x.id === l.expenseId; })[0] : null;
+      h += '<div class="log">' +
+        '<div class="row"><div class="grow"><h4>'+esc(l.title || "記録")+'</h4>' +
+        '<div class="meta">' +
+          (l.time ? esc(l.time)+" ・ " : "") +
+          (l.cat ? esc(l.cat) : "") +
+          (l.place ? " ・ 📍"+esc(l.place) : "") +
+        '</div></div>' +
+        '<button class="btn sm ghost" data-editlog="'+l.id+'">編集</button></div>' +
+        (l.memo ? '<div class="memo">'+esc(l.memo)+'</div>' : "") +
+        (linkedExp ? '<div class="tiny" style="margin-top:6px;font-weight:700;color:var(--accent)">💴 '+yen(linkedExp.amount)+' 使用</div>' : "") +
+        (l.photos && l.photos.length ? '<div class="shots">' + l.photos.map(function(p,i){
+          return '<img src="'+p+'" data-zoom="'+l.id+':'+i+'" alt="">'; }).join("") + '</div>' : "") +
+      '</div>';
+    });
+    h += '</div></div>';
+  });
+  return h;
+}
+
+/* --- tab: 会計 --- */
+function viewExp(t){
+  var total = tripTotal(t);
+  var h = '<div class="card" style="padding:16px">' +
+    '<div class="tiny muted" style="font-weight:700">旅の総額</div>' +
+    '<div class="num" style="font-size:30px;font-weight:800;line-height:1.2">'+yen(total)+'</div>' +
+    (t.members.length ? '<div class="sm muted">1人あたり平均 '+yen(total/t.members.length)+' ・ '+t.expenses.length+'件</div>' : '') +
+    '</div>';
+
+  if(!t.expenses.length){
+    return h + '<div class="empty"><div class="big">💴</div>' +
+      '<div style="font-weight:700;color:var(--text)">支出がありません</div>' +
+      '<div class="sm" style="margin-top:6px">立て替えた分を登録すると自動で割り勘されます</div></div>';
+  }
+
+  // カテゴリ内訳
+  var byCat = {};
+  t.expenses.forEach(function(e){ byCat[e.cat||"その他"] = (byCat[e.cat||"その他"]||0) + e.amount; });
+  var cats = Object.keys(byCat).sort(function(a,b){ return byCat[b]-byCat[a]; });
+  h += '<div class="section-title">カテゴリ別</div><div class="card" style="padding:14px">';
+  cats.forEach(function(c){
+    var pct = Math.round(byCat[c] / total * 100);
+    h += '<div style="margin-bottom:10px"><div class="row sm">' +
+      '<span class="grow">'+esc(c)+'</span>' +
+      '<span class="num muted">'+yen(byCat[c])+' ・ '+pct+'%</span></div>' +
+      '<div class="bar"><i style="width:'+pct+'%"></i></div></div>';
+  });
+  h += '</div>';
+
+  // 明細
+  var list = t.expenses.slice().sort(function(a,b){ return (b.date||"") < (a.date||"") ? -1 : 1; });
+  h += '<div class="section-title">明細</div><div class="card">';
+  list.forEach(function(e){
+    h += '<div class="item">' +
+      '<div class="avatar">'+esc(initials(memberName(t,e.payerId)))+'</div>' +
+      '<div class="grow"><div class="trunc" style="font-weight:600">'+esc(e.title)+'</div>' +
+      '<div class="tiny muted trunc">'+fmtDate(e.date)+' ・ '+esc(e.cat||"その他")+' ・ ' +
+      esc(memberName(t,e.payerId))+'が立替 ・ '+e.sharedBy.length+'人で割り勘'+(e.logId?' ・ 📷記録から':'')+'</div></div>' +
+      '<div class="num" style="font-weight:700">'+yen(e.amount)+'</div>' +
+      '<button class="btn sm ghost" data-editexp="'+e.id+'">…</button></div>';
+  });
+  return h + '</div>';
+}
+
+/* --- tab: 精算 --- */
+function viewSettle(t){
+  if(!t.expenses.length) return '<div class="empty"><div class="big">🤝</div>' +
+    '<div style="font-weight:700;color:var(--text)">精算するものがありません</div></div>';
+
+  var b = balances(t), s = settlements(t);
+  var h = '<div class="section-title">誰が誰にいくら払う</div>';
+  if(!s.length){
+    h += '<div class="card" style="padding:22px;text-align:center">' +
+      '<div style="font-size:34px">✅</div><div style="font-weight:700;margin-top:4px">精算完了です</div>' +
+      '<div class="sm muted">全員の貸し借りが釣り合っています</div></div>';
+  } else {
+    var allMsg = "【"+t.title+"】精算のお願い\n" + s.map(function(x){
+      return "・"+memberName(t,x.from)+" → "+memberName(t,x.to)+" "+yen(x.amount);
+    }).join("\n");
+    h += '<div class="card">';
+    s.forEach(function(x){
+      var msg = "【"+t.title+"】精算のお願い\n"+memberName(t,x.from)+"さんから"+memberName(t,x.to)+
+        "さんへ "+yen(x.amount)+" をお願いします🙏";
+      h += '<div class="pay">' +
+        '<div class="avatar">'+esc(initials(memberName(t,x.from)))+'</div>' +
+        '<span style="font-weight:600">'+esc(memberName(t,x.from))+'</span>' +
+        '<span class="arrow">→</span>' +
+        '<div class="avatar">'+esc(initials(memberName(t,x.to)))+'</div>' +
+        '<span style="font-weight:600">'+esc(memberName(t,x.to))+'</span>' +
+        '<span class="grow"></span>' +
+        '<span class="num" style="font-weight:800;font-size:17px">'+yen(x.amount)+'</span>' +
+        '<a class="btn sm" style="text-decoration:none" href="'+lineShareUrl(msg)+'" target="_blank" rel="noopener">LINEで送る</a>' +
+      '</div>';
+    });
+    h += '</div>' +
+      '<div style="margin-top:10px"><a class="btn primary" style="text-decoration:none;display:inline-block" ' +
+      'href="'+lineShareUrl(allMsg)+'" target="_blank" rel="noopener">📱 未払いの人へまとめてLINEで送る</a></div>' +
+      '<div class="note" style="margin-top:10px">送金回数がいちばん少なくなる組み合わせです。「LINEで送る」を押すとLINEが開き、' +
+      '内容が入力された状態になります。送信相手を選んで送るのはご自身でお願いします（自動送信ではありません）。</div>';
+  }
+
+  h += '<div class="section-title">メンバー別の収支</div><div class="card">';
+  t.members.forEach(function(m){
+    var paid = t.expenses.reduce(function(s2,e){ return s2 + (e.payerId===m.id ? e.amount : 0); }, 0);
+    var owe = 0;
+    t.expenses.forEach(function(e){
+      var ids = e.sharedBy.filter(function(id){ return b[id] !== undefined; });
+      var sh = splitShares(e.amount, ids);
+      owe += sh[m.id] || 0;
+    });
+    var v = b[m.id] || 0;
+    h += '<div class="item"><div class="avatar">'+esc(initials(m.name))+'</div>' +
+      '<div class="grow"><div style="font-weight:600">'+esc(m.name)+'</div>' +
+      '<div class="tiny muted num">立替 '+yen(paid)+' ／ 負担 '+yen(owe)+'</div></div>' +
+      '<div class="num '+(v>0?"pos":v<0?"neg":"muted")+'" style="font-weight:700">' +
+        (v>0?"+":"")+yen(v)+'</div></div>';
+  });
+  return h + '</div>';
+}
+
+/* --- tab: 設定 --- */
+function viewSet(t){
+  var h = '<div class="section-title">メンバー</div><div class="card">';
+  t.members.forEach(function(m){
+    var used = t.expenses.some(function(e){
+      return e.payerId===m.id || e.sharedBy.indexOf(m.id)>=0; });
+    h += '<div class="item"><div class="avatar">'+esc(initials(m.name))+'</div>' +
+      '<div class="grow" style="font-weight:600">'+esc(m.name)+'</div>' +
+      (used ? '<span class="tiny muted">会計に使用中</span>'
+            : '<button class="btn sm danger" data-delmem="'+m.id+'">削除</button>') +
+      '</div>';
+  });
+  h += '</div><div style="margin-top:10px"><button class="btn" data-act="add-mem">＋ メンバーを追加</button></div>';
+
+  h += '<div class="section-title">精算リマインド</div><div class="card" style="padding:16px">' +
+    '<div class="sm" style="font-weight:600;margin-bottom:10px">未精算があるとき、LINE送信画面を自動で開くタイマーを設定できます</div>' +
+    '<label class="f"><span>頻度</span>' + pickRow("remind-mode",
+      [{v:"daily",t:"毎日"},{v:"once",t:"旅の翌日に1回"}], "daily", false) + '</label>' +
+    '<label class="f"><span>時刻</span><input type="time" id="f-remind-time" value="20:00"></label>' +
+    '<button class="btn" data-act="gen-remind">⏰ 設定コマンドを作る</button>' +
+    '<div id="remind-out" style="margin-top:12px"></div>' +
+    '<div class="note" style="margin-top:12px">Windowsのタスクスケジューラに登録し、指定時刻にこの画面（精算リマインド）が' +
+    '自動で開くようにします。LINEアカウントへのログインや外部サービスの登録は不要です。' +
+    'ただしパソコンの電源が入っていてサインインしている必要があります。' +
+    'コマンドは「コマンドプロンプト」に貼り付けて実行してください。</div></div>';
+
+  h += '<div class="section-title">写真の書き出し</div><div class="card" style="padding:16px">' +
+    '<div class="sm" style="font-weight:600;margin-bottom:8px">この旅の写真をまとめてZIPにできます</div>' +
+    '<button class="btn" data-act="export-photos">🖼 写真をまとめてZIPで書き出す</button>' +
+    '<div class="note" style="margin-top:12px">LINEはアルバムの自動作成・自動追加を外部アプリに公開していないため、' +
+    '完全な自動化はできません。書き出したZIPを展開して全選択し、LINEのアルバムに一括で追加してください。</div></div>';
+
+  var used = 0;
+  try { used = new Blob([localStorage.getItem(KEY)||""]).size; } catch(e){}
+  var pct = Math.min(100, Math.round(used / (5*1024*1024) * 100));
+
+  h += '<div class="section-title">データ</div><div class="card" style="padding:16px">' +
+    '<div class="sm" style="font-weight:600">保存容量の目安</div>' +
+    '<div class="bar" style="margin:8px 0 4px"><i style="width:'+pct+'%;background:'+
+      (pct>80?"var(--neg)":"var(--accent)")+'"></i></div>' +
+    '<div class="tiny muted num">' + (used/1024/1024).toFixed(2) + ' MB / 約 5 MB（全ての旅の合計）</div>' +
+    '<div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap">' +
+      '<button class="btn" data-act="export">バックアップを書き出す</button>' +
+      '<button class="btn" data-act="import">読み込む</button>' +
+    '</div>' +
+    '<div class="note" style="margin-top:12px">データはこのPCのブラウザ内にだけ保存されます。' +
+    'ブラウザの閲覧データを消すと失われるため、ときどき書き出して保管してください。</div>' +
+    '</div>';
+
+  h += '<div class="section-title">この旅</div>' +
+    '<div class="row" style="gap:8px;flex-wrap:wrap">' +
+    '<button class="btn" data-act="edit-trip">旅の情報を編集</button>' +
+    '<button class="btn danger" data-act="del-trip">この旅を削除</button></div>';
+  return h;
+}
+
+/* ---------------- modal ---------------- */
+function modal(html){
+  el("overlay").innerHTML = '<div class="mask"><div class="sheet">'+html+'</div></div>';
+  var first = el("overlay").querySelector("input,textarea,select");
+  if(first) setTimeout(function(){ first.focus(); }, 30);
+}
+function closeModal(){ el("overlay").innerHTML = ""; }
+el("overlay").addEventListener("click", function(ev){
+  if(ev.target.classList.contains("mask") || ev.target.classList.contains("lightbox")) closeModal();
+});
+
+function pickRow(name, items, selected, multi){
+  return '<div class="picks" data-picks="'+name+'" data-multi="'+(multi?1:0)+'">' +
+    items.map(function(it){
+      var on = multi ? selected.indexOf(it.v) >= 0 : selected === it.v;
+      return '<button type="button" class="pick'+(on?" on":"")+'" data-v="'+esc(it.v)+'">'+esc(it.t)+'</button>';
+    }).join("") + '</div>';
+}
+function picked(name, root){
+  root = root || el("overlay");
+  var box = root.querySelector('[data-picks="'+name+'"]');
+  if(!box) return null;
+  var on = [].slice.call(box.querySelectorAll(".pick.on")).map(function(b){ return b.dataset.v; });
+  return box.dataset.multi === "1" ? on : (on[0] || "");
+}
+
+/* ---------------- forms ---------------- */
+function formTrip(t){
+  var isNew = !t;
+  t = t || { title:"", destination:"", startDate:todayStr(), endDate:todayStr(),
+             color:COLORS[0], members:[] };
+  modal(
+    '<h2>'+(isNew?"新しい旅":"旅の情報")+'</h2>' +
+    '<label class="f"><span>タイトル</span><input id="f-title" value="'+esc(t.title)+'" placeholder="例）沖縄 3日間"></label>' +
+    '<label class="f"><span>行き先</span><input id="f-dest" value="'+esc(t.destination)+'" placeholder="例）那覇・美ら海"></label>' +
+    '<div class="two">' +
+      '<label class="f"><span>出発日</span><input type="date" id="f-sd" value="'+esc(t.startDate)+'"></label>' +
+      '<label class="f"><span>帰着日</span><input type="date" id="f-ed" value="'+esc(t.endDate)+'"></label>' +
+    '</div>' +
+    '<label class="f"><span>テーマカラー</span>' +
+      '<div class="picks" data-picks="color" data-multi="0">' + COLORS.map(function(c){
+        return '<button type="button" class="pick'+(t.color===c?" on":"")+'" data-v="'+c+'" ' +
+          'style="width:38px;height:38px;padding:0;background:'+c+';border-color:'+c+'"></button>';
+      }).join("") + '</div></label>' +
+    (isNew ? '<label class="f"><span>メンバー（カンマ区切り）</span>' +
+      '<input id="f-mem" placeholder="例）自分, たろう, はなこ" value="自分"></label>' : '') +
+    '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
+    '<button class="btn primary" data-act="'+(isNew?"save-new-trip":"save-trip")+'">保存</button></div>'
+  );
+}
+
+function formLog(t, log){
+  var isNew = !log;
+  log = log || { date: todayStr(), time: nowTime(), title:"", place:"",
+                 memo:"", cat:"観光", photos:[] };
+  window._photos = (log.photos || []).slice();
+  window._lastRawFile = null;
+
+  if(isNew){
+    var hasMembers = t.members.length > 0;
+    var multiMembers = t.members.length > 1;
+    var mem = t.members.map(function(m){ return {v:m.id, t:m.name}; });
+    var defPayer = defaultPayerId(t);
+    var defShare = t.members.map(function(m){ return m.id; });
+
+    modal(
+      '<h2>記録する</h2>' +
+      '<div class="quickshot" data-act="pick-photo" id="f-shot">' +
+        (window._photos.length ? '<img src="'+window._photos[0]+'" alt="">' :
+          '<div class="quickshot-ph"><div style="font-size:30px">📷</div>' +
+          '<div class="tiny">タップして写真を追加</div></div>') +
+      '</div>' +
+      '<input type="file" id="f-photo" accept="image/*" capture="environment" style="display:none">' +
+      '<label class="f" style="margin-top:14px"><span>今どうしてる？</span>' +
+        '<input id="f-title" autocomplete="off" value="'+esc(log.title)+'" placeholder="例）美ら海水族館に到着"></label>' +
+      (hasMembers ?
+        '<label class="f"><span>💴 使った金額（円・任意）</span>' +
+          '<input type="number" inputmode="numeric" id="f-amt" placeholder="支払った場合だけ入力"></label>' +
+        '<div id="f-ocr-wrap" style="margin:-8px 0 14px;'+(window._photos.length?'':'display:none')+'">' +
+          '<button type="button" class="btn sm" data-act="ocr-receipt">🧾 写真から金額を読み取る</button>' +
+          '<div id="f-ocr-status" class="tiny muted" style="margin-top:6px"></div>' +
+        '</div>' +
+        (multiMembers ?
+          '<div id="f-split-box" style="display:none">' +
+            '<label class="f"><span>払った人</span>' + pickRow("payer", mem, defPayer, false) + '</label>' +
+            '<label class="f"><span>割り勘する人</span>' + pickRow("share", mem, defShare, true) + '</label>' +
+          '</div>'
+        : '')
+      : '') +
+      '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
+      '<button class="btn primary" data-act="save-log" data-id="">記録する</button></div>' +
+      '<details class="more"><summary>詳しく設定</summary>' +
+        '<div class="two" style="margin-top:12px">' +
+          '<label class="f"><span>日付</span><input type="date" id="f-date" value="'+esc(log.date)+'"></label>' +
+          '<label class="f"><span>時刻</span><input type="time" id="f-time" value="'+esc(log.time)+'"></label>' +
+        '</div>' +
+        '<label class="f"><span>場所</span><input id="f-place" value="'+esc(log.place)+'" placeholder="例）本部町"></label>' +
+        '<label class="f"><span>カテゴリ</span>' + pickRow("cat", LOG_CATS.map(function(c){
+          return {v:c,t:c}; }), log.cat, false) + '</label>' +
+        '<label class="f"><span>メモ</span><textarea id="f-memo" placeholder="もう少し詳しく">'+esc(log.memo)+'</textarea></label>' +
+      '</details>'
+    );
+
+    var amtEl = el("f-amt");
+    if(amtEl){
+      amtEl.addEventListener("input", function(){
+        var box = el("f-split-box");
+        if(box) box.style.display = (+amtEl.value > 0) ? "" : "none";
+      });
+    }
+  } else {
+    modal(
+      '<h2>記録を編集</h2>' +
+      '<div class="two">' +
+        '<label class="f"><span>日付</span><input type="date" id="f-date" value="'+esc(log.date)+'"></label>' +
+        '<label class="f"><span>時刻（任意）</span><input type="time" id="f-time" value="'+esc(log.time)+'"></label>' +
+      '</div>' +
+      '<label class="f"><span>タイトル</span><input id="f-title" value="'+esc(log.title)+'" placeholder="例）美ら海水族館"></label>' +
+      '<label class="f"><span>場所（任意）</span><input id="f-place" value="'+esc(log.place)+'" placeholder="例）本部町"></label>' +
+      '<label class="f"><span>カテゴリ</span>' + pickRow("cat", LOG_CATS.map(function(c){
+        return {v:c,t:c}; }), log.cat, false) + '</label>' +
+      '<label class="f"><span>メモ</span><textarea id="f-memo" placeholder="感じたこと、おすすめポイントなど">'+esc(log.memo)+'</textarea></label>' +
+      '<label class="f"><span>写真</span>' +
+        '<input type="file" id="f-photo" accept="image/*" multiple>' +
+        '<div class="shots" id="f-shots"></div>' +
+        '<div class="tiny muted" style="margin-top:6px">自動で縮小して保存します（1枚あたり数十KB）</div></label>' +
+      '<div class="actions">' +
+        '<button class="btn danger" data-act="del-log" data-id="'+log.id+'">削除</button>' +
+        '<button class="btn" data-act="cancel">キャンセル</button>' +
+        '<button class="btn primary" data-act="save-log" data-id="'+log.id+'">保存</button></div>'
+    );
+    drawShots();
+  }
+
+  var fp = el("f-photo");
+  fp.addEventListener("change", function(ev){
+    var files = [].slice.call(ev.target.files);
+    files.forEach(function(f){
+      if(isNew) window._lastRawFile = f;
+      shrink(f, function(url){
+        window._photos.push(url);
+        if(isNew){
+          var box = el("f-shot");
+          if(box) box.innerHTML = '<img src="'+url+'" alt="">';
+          var ocrWrap = el("f-ocr-wrap");
+          if(ocrWrap) ocrWrap.style.display = "";
+        } else drawShots();
+      });
+    });
+    ev.target.value = "";
+  });
+}
+function drawShots(){
+  var box = el("f-shots"); if(!box) return;
+  box.innerHTML = window._photos.map(function(p,i){
+    return '<span style="position:relative;display:inline-block">' +
+      '<img src="'+p+'" alt="">' +
+      '<button type="button" data-rmphoto="'+i+'" style="position:absolute;top:-6px;right:-6px;' +
+      'width:22px;height:22px;border-radius:50%;border:none;background:var(--neg);color:#fff;' +
+      'font-size:13px;line-height:1;padding:0">×</button></span>';
+  }).join("");
+}
+function shrink(file, cb){
+  var r = new FileReader();
+  r.onload = function(){
+    var img = new Image();
+    img.onload = function(){
+      var max = 800, w = img.width, h = img.height;
+      if(w > h && w > max){ h = Math.round(h * max / w); w = max; }
+      else if(h > max){ w = Math.round(w * max / h); h = max; }
+      var c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      cb(c.toDataURL("image/jpeg", 0.6));
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(file);
+}
+
+/* ---------------- receipt OCR ---------------- */
+function ensureTesseract(cb, errCb){
+  if(window.Tesseract){ cb(); return; }
+  if(window._tessLoading){ window._tessLoading.push(cb); return; }
+  window._tessLoading = [cb];
+  var s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+  s.onload = function(){
+    var cbs = window._tessLoading; window._tessLoading = null;
+    cbs.forEach(function(f){ f(); });
+  };
+  s.onerror = function(){ window._tessLoading = null; errCb(); };
+  document.head.appendChild(s);
+}
+function parseReceiptTotal(text){
+  var norm = String(text || "")
+    .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/，/g, ",");
+  var lines = norm.split(/\r?\n/);
+  var keys = ["合計","ごうけい","小計","お会計","御会計","お買上","ご請求","total","Total","TOTAL"];
+  for(var i=0;i<lines.length;i++){
+    for(var k=0;k<keys.length;k++){
+      if(lines[i].indexOf(keys[k]) >= 0){
+        var m = lines[i].match(/[0-9][0-9,]{2,7}/g);
+        if(!m && lines[i+1]) m = lines[i+1].match(/[0-9][0-9,]{2,7}/g);
+        if(m){
+          var n = parseInt(m[m.length-1].replace(/,/g,""), 10);
+          if(n > 0 && n < 10000000) return n;
+        }
+      }
+    }
+  }
+  var all = norm.match(/[0-9][0-9,]{2,7}/g);
+  if(all && all.length){
+    var nums = all.map(function(s){ return parseInt(s.replace(/,/g,""),10); })
+                  .filter(function(n){ return n > 0 && n < 10000000; });
+    if(nums.length) return Math.max.apply(null, nums);
+  }
+  return null;
+}
+
+/* ---------------- photo zip export (LINEアルバム用) ---------------- */
+function crc32(bytes){
+  if(!crc32.table){
+    var t = [];
+    for(var n=0;n<256;n++){
+      var c = n;
+      for(var k=0;k<8;k++){ c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); }
+      t[n] = c >>> 0;
+    }
+    crc32.table = t;
+  }
+  var crc = 0xFFFFFFFF;
+  for(var i=0;i<bytes.length;i++){ crc = (crc >>> 8) ^ crc32.table[(crc ^ bytes[i]) & 0xFF]; }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function dataUrlToBytes(durl){
+  var b64 = (durl.split(",")[1] || "");
+  var bin = atob(b64);
+  var arr = new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+function toDosDateTime(d){
+  d = d || new Date();
+  var dosTime = ((d.getHours() & 0x1F) << 11) | ((d.getMinutes() & 0x3F) << 5) | ((d.getSeconds() >> 1) & 0x1F);
+  var dosDate = (((d.getFullYear()-1980) & 0x7F) << 9) | (((d.getMonth()+1) & 0xF) << 5) | (d.getDate() & 0x1F);
+  return { time: dosTime, date: dosDate };
+}
+function buildZip(files){
+  var dt = toDosDateTime();
+  var parts = [], centralParts = [], offset = 0;
+  files.forEach(function(f){
+    var nameBytes = new TextEncoder().encode(f.name);
+    var crc = crc32(f.bytes), size = f.bytes.length;
+
+    var lh = new Uint8Array(30 + nameBytes.length);
+    var lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, dt.time, true);
+    lv.setUint16(12, dt.date, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    lh.set(nameBytes, 30);
+    parts.push(lh, f.bytes);
+
+    var ch = new Uint8Array(46 + nameBytes.length);
+    var cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, dt.time, true);
+    cv.setUint16(14, dt.date, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint32(42, offset, true);
+    ch.set(nameBytes, 46);
+    centralParts.push(ch);
+
+    offset += lh.length + f.bytes.length;
+  });
+
+  var centralSize = centralParts.reduce(function(s,p){ return s + p.length; }, 0);
+  var end = new Uint8Array(22);
+  var ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+
+  return new Blob(parts.concat(centralParts, [end]), { type: "application/zip" });
+}
+function collectTripPhotos(t){
+  var files = [], counter = {};
+  t.logs.forEach(function(l){
+    (l.photos || []).forEach(function(p){
+      var safe = (l.title || "").replace(/[\\\/:*?"<>|]/g, "_").slice(0, 20);
+      var base = (l.date || "unknown") + (safe ? "_" + safe : "");
+      counter[base] = (counter[base] || 0) + 1;
+      var name = base + (counter[base] > 1 ? "_" + counter[base] : "") + ".jpg";
+      files.push({ name: name, bytes: dataUrlToBytes(p) });
+    });
+  });
+  return files;
+}
+
+function formExp(t, e){
+  var isNew = !e;
+  e = e || { date: t.startDate || todayStr(), title:"", amount:"", cat:"食事",
+             payerId: defaultPayerId(t),
+             sharedBy: t.members.map(function(m){ return m.id; }) };
+  var mem = t.members.map(function(m){ return {v:m.id, t:m.name}; });
+  modal(
+    '<h2>'+(isNew?"支出を追加":"支出を編集")+'</h2>' +
+    '<div class="two">' +
+      '<label class="f"><span>日付</span><input type="date" id="f-date" value="'+esc(e.date)+'"></label>' +
+      '<label class="f"><span>金額（円）</span><input type="number" inputmode="numeric" id="f-amt" value="'+esc(e.amount)+'" placeholder="3000"></label>' +
+    '</div>' +
+    '<label class="f"><span>内容</span><input id="f-title" value="'+esc(e.title)+'" placeholder="例）夕食（居酒屋）"></label>' +
+    '<label class="f"><span>カテゴリ</span>' + pickRow("cat", EXP_CATS.map(function(c){
+      return {v:c,t:c}; }), e.cat, false) + '</label>' +
+    '<label class="f"><span>立て替えた人</span>' + pickRow("payer", mem, e.payerId, false) + '</label>' +
+    '<label class="f"><span>割り勘する人</span>' + pickRow("share", mem, e.sharedBy, true) +
+      '<div class="tiny muted" style="margin-top:6px">選んだ人で均等に分割します（端数は1円単位で調整）</div></label>' +
+    '<div class="actions">' +
+      (isNew ? '' : '<button class="btn danger" data-act="del-exp" data-id="'+e.id+'">削除</button>') +
+      '<button class="btn" data-act="cancel">キャンセル</button>' +
+      '<button class="btn primary" data-act="save-exp" data-id="'+(e.id||"")+'">保存</button></div>'
+  );
+}
+
+/* ---------------- events ---------------- */
+document.addEventListener("click", function(ev){
+  var el2;
+
+  // pick chips
+  el2 = ev.target.closest(".pick");
+  if(el2){
+    var box = el2.parentElement;
+    if(box.dataset.multi === "1") el2.classList.toggle("on");
+    else {
+      [].slice.call(box.children).forEach(function(c){ c.classList.remove("on"); });
+      el2.classList.add("on");
+    }
+    return;
+  }
+
+  // remove photo
+  el2 = ev.target.closest("[data-rmphoto]");
+  if(el2){ window._photos.splice(+el2.dataset.rmphoto, 1); drawShots(); return; }
+
+  // zoom photo
+  el2 = ev.target.closest("[data-zoom]");
+  if(el2){
+    el("overlay").innerHTML = '<div class="lightbox"><img src="'+el2.getAttribute("src")+'"></div>';
+    return;
+  }
+
+  el2 = ev.target.closest("[data-open]");
+  if(el2){ go({ name:"trip", id:el2.dataset.open, tab:"log" }); return; }
+
+  el2 = ev.target.closest("[data-tab]");
+  if(el2){ view.tab = el2.dataset.tab; render(); return; }
+
+  el2 = ev.target.closest("[data-editlog]");
+  if(el2){
+    var t0 = curTrip();
+    formLog(t0, t0.logs.filter(function(l){ return l.id === el2.dataset.editlog; })[0]);
+    return;
+  }
+  el2 = ev.target.closest("[data-editexp]");
+  if(el2){
+    var t1 = curTrip();
+    formExp(t1, t1.expenses.filter(function(x){ return x.id === el2.dataset.editexp; })[0]);
+    return;
+  }
+  el2 = ev.target.closest("[data-delmem]");
+  if(el2){
+    var t2 = curTrip();
+    t2.members = t2.members.filter(function(m){ return m.id !== el2.dataset.delmem; });
+    save(); render(); return;
+  }
+
+  el2 = ev.target.closest("[data-act]");
+  if(!el2) return;
+  act(el2.dataset.act, el2);
+});
+
+function act(a, node){
+  var t = curTrip();
+
+  if(a === "cancel"){ closeModal(); return; }
+  if(a === "home"){ go({ name:"home" }); return; }
+  if(a === "new-trip"){ formTrip(null); return; }
+  if(a === "edit-trip"){ formTrip(t); return; }
+  if(a === "new-log"){ formLog(t, null); return; }
+  if(a === "new-exp"){
+    if(!t.members.length){ alert("先に設定タブでメンバーを追加してください。"); return; }
+    formExp(t, null); return;
+  }
+
+  if(a === "save-new-trip" || a === "save-trip"){
+    var title = el("f-title").value.trim();
+    if(!title){ alert("タイトルを入力してください。"); return; }
+    var data = {
+      title: title,
+      destination: el("f-dest").value.trim(),
+      startDate: el("f-sd").value,
+      endDate: el("f-ed").value,
+      color: picked("color") || COLORS[0]
+    };
+    if(a === "save-new-trip"){
+      var names = el("f-mem").value.split(/[,、]/).map(function(s){ return s.trim(); })
+                    .filter(function(s){ return s; });
+      var nt = Object.assign({ id:uid(), members:[], logs:[], expenses:[] }, data);
+      nt.members = names.map(function(n){ return { id:uid(), name:n }; });
+      db.trips.push(nt); save(); closeModal();
+      go({ name:"trip", id:nt.id, tab:"log" });
+    } else {
+      Object.assign(t, data); save(); closeModal(); render();
+    }
+    return;
+  }
+
+  if(a === "pick-photo"){
+    var pf = el("f-photo"); if(pf) pf.click();
+    return;
+  }
+
+  if(a === "ocr-receipt"){
+    if(!window._photos.length){ alert("先に写真を追加してください。"); return; }
+    var st = el("f-ocr-status");
+    if(st) st.textContent = "読み取り中…（初回はデータ取得のため時間がかかります）";
+    ensureTesseract(function(){
+      var src = window._lastRawFile || window._photos[0];
+      Tesseract.recognize(src, "jpn+eng").then(function(res){
+        var n = parseReceiptTotal(res.data && res.data.text);
+        if(n){
+          var amtEl = el("f-amt");
+          if(amtEl){ amtEl.value = n; amtEl.dispatchEvent(new Event("input")); }
+          if(st) st.textContent = "¥" + n.toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
+        } else if(st){
+          st.textContent = "金額を自動で見つけられませんでした。手入力してください。";
+        }
+      }).catch(function(){
+        if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。";
+      });
+    }, function(){
+      if(st) st.textContent = "読み取り機能を読み込めませんでした。インターネット接続が必要です。";
+    });
+    return;
+  }
+
+  if(a === "save-log"){
+    var ti = el("f-title").value.trim();
+    var memoVal = el("f-memo") ? el("f-memo").value : "";
+    var photos = window._photos.slice();
+    if(!ti && !memoVal.trim() && !photos.length){
+      alert("ひとことか、写真を入れてください。");
+      return;
+    }
+    var l = {
+      date: el("f-date").value, time: el("f-time").value, title: ti,
+      place: el("f-place").value.trim(), memo: memoVal,
+      cat: picked("cat"), photos: photos
+    };
+    var id = node.dataset.id;
+    var existing = id ? t.logs.filter(function(x){ return x.id===id; })[0] : null;
+    if(existing){ Object.assign(existing, l); }
+    else { l.id = uid(); t.logs.push(l); existing = l; }
+
+    var amtEl = el("f-amt");
+    if(amtEl && t.members.length){
+      var amt = Math.round(+amtEl.value);
+      if(amt > 0){
+        var payer = t.members.length > 1 ? (picked("payer") || defaultPayerId(t)) : t.members[0].id;
+        var share = t.members.length > 1 ? picked("share") : [t.members[0].id];
+        if(!share || !share.length) share = t.members.map(function(m){ return m.id; });
+        var expData = {
+          date: l.date, title: l.title || "記録の支出", amount: amt,
+          cat: "その他", payerId: payer, sharedBy: share, logId: existing.id
+        };
+        if(existing.expenseId && t.expenses.some(function(x){ return x.id === existing.expenseId; })){
+          Object.assign(t.expenses.filter(function(x){ return x.id === existing.expenseId; })[0], expData);
+        } else {
+          expData.id = uid();
+          existing.expenseId = expData.id;
+          t.expenses.push(expData);
+        }
+        t.lastPayerId = payer;
+      }
+    }
+
+    if(save()) { closeModal(); render(); }
+    return;
+  }
+  if(a === "del-log"){
+    if(!confirm("この記録を削除しますか？")) return;
+    t.logs = t.logs.filter(function(x){ return x.id !== node.dataset.id; });
+    save(); closeModal(); render(); return;
+  }
+
+  if(a === "save-exp"){
+    var amt = Math.round(+el("f-amt").value);
+    var et = el("f-title").value.trim();
+    var payer = picked("payer"), share = picked("share");
+    if(!et){ alert("内容を入力してください。"); return; }
+    if(!(amt > 0)){ alert("金額を正しく入力してください。"); return; }
+    if(!payer){ alert("立て替えた人を選んでください。"); return; }
+    if(!share.length){ alert("割り勘する人を1人以上選んでください。"); return; }
+    var e = { date: el("f-date").value, title: et, amount: amt,
+              cat: picked("cat"), payerId: payer, sharedBy: share };
+    var eid = node.dataset.id;
+    if(eid){ Object.assign(t.expenses.filter(function(x){ return x.id===eid; })[0], e); }
+    else { e.id = uid(); t.expenses.push(e); }
+    t.lastPayerId = payer;
+    save(); closeModal(); render(); return;
+  }
+  if(a === "del-exp"){
+    if(!confirm("この支出を削除しますか？")) return;
+    t.expenses = t.expenses.filter(function(x){ return x.id !== node.dataset.id; });
+    save(); closeModal(); render(); return;
+  }
+
+  if(a === "add-mem"){
+    var n = prompt("メンバーの名前");
+    if(n && n.trim()){ t.members.push({ id:uid(), name:n.trim() }); save(); render(); }
+    return;
+  }
+
+  if(a === "open-trip"){ go({ name:"trip", id: node.dataset.id, tab:"settle" }); return; }
+
+  if(a === "gen-remind"){
+    var mode = picked("remind-mode", document) || "daily";
+    var time = el("f-remind-time").value || "20:00";
+    var cmd = buildRemindCmd(t, mode, time);
+    var delCmd = buildRemindDeleteCmd(t);
+    var out = el("remind-out");
+    if(out){
+      out.innerHTML =
+        '<div class="tiny muted" style="font-weight:700;margin-bottom:4px">① コマンドプロンプトに貼り付けてEnter</div>' +
+        '<textarea readonly style="min-height:56px;font-family:monospace;font-size:12px">'+esc(cmd)+'</textarea>' +
+        '<button class="btn sm" style="margin-top:6px" data-act="copy-remind" data-cmd="'+esc(cmd)+'">コピー</button>' +
+        '<div class="tiny muted" style="font-weight:700;margin:14px 0 4px">② 解除したいときはこれを実行</div>' +
+        '<textarea readonly style="min-height:40px;font-family:monospace;font-size:12px">'+esc(delCmd)+'</textarea>';
+    }
+    return;
+  }
+  if(a === "copy-remind"){
+    var cmdText = node.dataset.cmd;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(cmdText)
+        .then(function(){ alert("コピーしました。コマンドプロンプトに貼り付けてください。"); })
+        .catch(function(){ alert("コピーできませんでした。テキストを手動で選択してコピーしてください。"); });
+    }
+    return;
+  }
+
+  if(a === "export-photos"){
+    var files = collectTripPhotos(t);
+    if(!files.length){ alert("この旅にはまだ写真がありません。"); return; }
+    var blob = buildZip(files);
+    var url = URL.createObjectURL(blob);
+    var a3 = document.createElement("a");
+    a3.href = url; a3.download = (t.title || "旅").replace(/[\\\/:*?"<>|]/g, "_") + "_写真.zip";
+    document.body.appendChild(a3); a3.click(); a3.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+    return;
+  }
+  if(a === "dismiss-photo-banner"){
+    t.photoExportDismissed = true; save(); render(); return;
+  }
+
+  if(a === "del-trip"){
+    if(!confirm("「"+t.title+"」を削除します。記録と会計もすべて消えます。よろしいですか？")) return;
+    db.trips = db.trips.filter(function(x){ return x.id !== t.id; });
+    save(); go({ name:"home" }); return;
+  }
+
+  if(a === "export"){
+    var blob = new Blob([JSON.stringify(db, null, 2)], { type:"application/json" });
+    var url = URL.createObjectURL(blob);
+    var a2 = document.createElement("a");
+    a2.href = url; a2.download = "tabilog-backup-" + todayStr() + ".json";
+    document.body.appendChild(a2); a2.click(); a2.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    return;
+  }
+  if(a === "import"){
+    var inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "application/json,.json";
+    inp.onchange = function(){
+      var f = inp.files[0]; if(!f) return;
+      var r = new FileReader();
+      r.onload = function(){
+        try{
+          var d = JSON.parse(r.result);
+          if(!d || !Array.isArray(d.trips)) throw new Error("形式が違います");
+          if(!confirm("現在のデータを、読み込んだ内容で置き換えます。よろしいですか？")) return;
+          db = d; save(); go({ name:"home" });
+        } catch(err){ alert("読み込めませんでした：" + err.message); }
+      };
+      r.readAsText(f);
+    };
+    inp.click();
+    return;
+  }
+}
+
+render();
+
+if("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")){
+  navigator.serviceWorker.register("sw.js").catch(function(){});
+}
+</script>
+</body>
+</html>
