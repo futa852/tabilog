@@ -88,24 +88,59 @@ button{font:inherit;color:inherit;cursor:pointer}
   border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 
-/* timeline */
-.day{margin-top:20px}
-.day-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.day-head .d{font-weight:800;font-size:15px}
-.tl{position:relative;padding-left:22px}
-.tl:before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:2px;background:var(--line)}
-.log{position:relative;margin-bottom:10px;padding:12px 14px;background:var(--surface);
-  border:1px solid var(--line);border-radius:12px}
-.log:before{content:"";position:absolute;left:-20px;top:16px;width:10px;height:10px;border-radius:50%;
-  background:var(--accent);box-shadow:0 0 0 3px var(--bg)}
-.log h4{margin:0;font-size:15px}
-.log-new{border-color:var(--accent)}
+/* day nav */
+.daynav{display:flex;align-items:center;gap:2px;margin:4px 0 10px}
+.daynav-label{flex:0 0 auto;border:none;background:transparent;font:inherit;padding:6px 10px;
+  border-radius:10px;text-align:center;display:flex;flex-direction:column;align-items:center;line-height:1.3}
+.daynav-label:hover{background:var(--surface-2)}
+.dnv-day{font-size:11px;font-weight:800;color:var(--accent)}
+.dnv-date{font-size:14px;font-weight:700}
+
+/* feed rows (setlog風の行リスト) */
+.feedrow{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
+.feedrow:last-child{border-bottom:none}
+.feedrow .avatar{color:#fff}
+.fr-name{font-weight:700;font-size:14.5px;display:flex;align-items:center}
+.fr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.fr-memo{font-size:13.5px;margin-top:4px;white-space:pre-wrap;word-break:break-word}
+.fr-thumb{width:48px;height:48px;border-radius:10px;object-fit:cover;flex:0 0 auto;
+  background:var(--surface-2);border:1px solid var(--line);cursor:zoom-in}
+.fr-video{display:grid;place-items:center;font-size:18px;cursor:pointer}
+.capsule{display:inline-flex;align-items:center;gap:6px;margin-top:5px;border:1px dashed var(--line);
+  background:var(--surface-2);color:var(--muted);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600}
+.capture-row{cursor:pointer}
+.capture-row:hover .capsule{border-color:var(--accent);color:var(--accent)}
 .new-badge{display:inline-block;background:var(--neg);color:#fff;font-size:10px;font-weight:800;
   padding:2px 6px;border-radius:999px;vertical-align:middle;margin-left:5px}
-.log .meta{font-size:12px;color:var(--muted);margin-top:2px}
-.log .memo{margin-top:6px;font-size:14px;white-space:pre-wrap;word-break:break-word}
 .shots{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .shots img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
+
+/* calendar */
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;margin-top:6px}
+.calwd{font-size:11px;color:var(--muted);padding:4px 0;font-weight:700}
+.calday{position:relative;padding:9px 0;border:none;background:transparent;border-radius:8px;
+  font-size:13px;color:var(--text)}
+.calday:hover{background:var(--surface-2)}
+.calday.on{background:var(--accent);color:#fff;font-weight:700}
+.calday.out{color:var(--muted);opacity:.35}
+.calday .dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;
+  border-radius:50%;background:var(--accent)}
+.calday.on .dot{background:#fff}
+
+/* title dropdown menu */
+.title-btn{display:flex;align-items:center;gap:4px;border:none;background:transparent;font:inherit;
+  font-weight:700;font-size:17px;color:var(--text);padding:6px 8px;border-radius:8px;max-width:72%}
+.title-btn:hover{background:var(--surface-2)}
+.title-btn .chev{font-size:11px;color:var(--muted)}
+.dmask{align-items:flex-start!important;justify-content:flex-start!important;padding:60px 0 0 16px!important}
+.dsheet{width:220px;max-width:80vw;border-radius:14px;padding:6px;background:var(--surface);
+  box-shadow:var(--shadow)}
+.dmenu-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:none;
+  background:transparent;padding:11px 12px;border-radius:10px;font-weight:600;font-size:14px;color:var(--text)}
+.dmenu-item:hover{background:var(--surface-2)}
+.dmenu-item.on{color:var(--accent)}
+.dmenu-ic{font-size:16px;width:20px;text-align:center}
+.dmenu-check{margin-left:auto;color:var(--accent);font-weight:800}
 
 /* list rows */
 .item{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
@@ -217,6 +252,11 @@ function fmtRange(a,b){
 function daysBetween(a,b){
   if(!a||!b) return 0;
   return Math.round((new Date(b) - new Date(a)) / 86400000);
+}
+function addDays(s, delta){
+  var d = new Date(s + "T00:00:00");
+  d.setDate(d.getDate() + delta);
+  return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());
 }
 function initials(name){ return (name||"?").trim().slice(0,2); }
 function el(id){ return document.getElementById(id); }
@@ -635,16 +675,12 @@ function renderTrip(){
   var t = curTrip();
   var tab = view.tab || "log";
   el("appbar").innerHTML =
-    '<button class="icon-btn" data-act="home" title="一覧へ">←</button>' +
-    '<div class="grow"><h1>'+esc(t.title)+'</h1>' +
-    '<div class="sub">'+fmtRange(t.startDate,t.endDate)+'</div></div>' +
-    '<button class="icon-btn" data-tab="set" title="設定">⚙</button>';
+    '<button class="icon-btn" data-act="back" title="戻る">←</button>' +
+    '<button class="title-btn" data-act="trip-menu"><span class="trunc">'+esc(t.title)+'</span>' +
+      '<span class="chev">▾</span></button>' +
+    '<span class="grow"></span>';
 
-  var tabs = [["log","記録"],["money","お金"]];
-  var h = '<div class="tabs">' + tabs.map(function(x){
-      return '<button data-tab="'+x[0]+'" class="'+(tab===x[0]?"on":"")+'">'+x[1]+'</button>';
-    }).join("") + '</div>';
-
+  var h = "";
   var showBanner = t.endDate && t.endDate < todayStr() && !t.photoExportDismissed &&
     t.logs.some(function(l){ return l.photos && l.photos.length; });
   if(showBanner){
@@ -665,16 +701,7 @@ function renderTrip(){
   else h += viewSet(t);
 
   el("main").innerHTML = h;
-  el("fab").innerHTML =
-    tab === "log" ?
-      '<div style="position:fixed;right:max(16px,calc(50vw - 380px + 16px));bottom:22px;z-index:15;display:flex;align-items:center;gap:10px">' +
-        '<button class="fab" style="position:static;width:46px;height:46px;padding:0;border-radius:50%;' +
-          'font-size:19px;background:var(--surface);color:var(--text);border:1px solid var(--line);' +
-          'box-shadow:var(--shadow)" data-act="new-video" title="動画で記録">🎬</button>' +
-        '<button class="fab" style="position:static" data-act="new-log">＋ 記録</button>' +
-      '</div>'
-    : tab === "money" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
-  if(tab === "log") hydrateVideos();
+  el("fab").innerHTML = tab === "money" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
 }
 
 /* --- tab: お金(会計+精算をまとめて表示) --- */
@@ -683,54 +710,91 @@ function viewMoney(t){
   return viewExp(t) + '<div style="margin-top:8px"></div>' + viewSettle(t);
 }
 
-/* --- tab: 記録 --- */
+/* --- tab: 記録(setlog風・1日ずつのフィード) --- */
+function ensureLogDate(t){
+  if(view.date) return;
+  var today = todayStr();
+  if(t.startDate && t.endDate){
+    view.date = (today >= t.startDate && today <= t.endDate) ? today
+      : (today > t.endDate ? t.endDate : t.startDate);
+  } else if(t.logs.length){
+    var ds = t.logs.map(function(l){ return l.date; }).filter(Boolean).sort();
+    view.date = ds.length ? ds[ds.length-1] : today;
+  } else {
+    view.date = t.startDate || today;
+  }
+}
+function avatarColor(seed){
+  if(!seed) return "var(--accent)";
+  var h = 0;
+  for(var i=0;i<seed.length;i++) h = (h*31 + seed.charCodeAt(i)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
 function viewLog(t){
-  if(!t.logs.length) return '<div class="empty"><div class="big">📍</div>' +
-    '<div style="font-weight:700;color:var(--text)">記録がありません</div>' +
-    '<div class="sm" style="margin-top:6px">訪れた場所や思い出を残しましょう</div></div>';
+  ensureLogDate(t);
+  var d = view.date;
+  var n = t.startDate && d ? daysBetween(t.startDate, d) + 1 : 0;
+  var dayLogs = t.logs.filter(function(l){ return (l.date||"") === d; })
+    .sort(function(a,b){ return (a.time||"99") < (b.time||"99") ? -1 : 1; });
+  var hasMedia = dayLogs.some(function(l){ return (l.photos && l.photos.length) || l.video; });
 
-  var byDate = {};
-  t.logs.forEach(function(l){ (byDate[l.date||""] = byDate[l.date||""] || []).push(l); });
-  var dates = Object.keys(byDate).sort();
-  var h = "";
-  dates.forEach(function(d){
-    var n = t.startDate && d ? daysBetween(t.startDate, d) + 1 : 0;
-    byDate[d].sort(function(a,b){ return (a.time||"99") < (b.time||"99") ? -1 : 1; });
-    h += '<div class="day"><div class="day-head">' +
-      (n > 0 ? '<span class="d">Day '+n+'</span>' : '') +
-      '<span class="sm muted">'+fmtDate(d)+'</span>' +
-      '<span class="grow"></span>' +
-      '<button class="btn sm ghost" data-act="day-video" data-date="'+esc(d)+'">🎬 まとめ動画</button>' +
-      '</div><div class="tl">';
-    byDate[d].forEach(function(l){
+  var mine = defaultPayerId(t);
+  var myName = mine ? memberName(t, mine) : "あなた";
+
+  var h = '<div class="daynav">' +
+    '<button class="icon-btn" data-act="day-prev">‹</button>' +
+    '<button class="daynav-label" data-act="open-cal">' +
+      (n > 0 ? '<span class="dnv-day">Day '+n+'</span>' : '') +
+      '<span class="dnv-date">'+fmtDate(d)+' ▾</span>' +
+    '</button>' +
+    '<button class="icon-btn" data-act="day-next">›</button>' +
+    '<span class="grow"></span>' +
+    (hasMedia ? '<button class="btn sm ghost" data-act="day-video" data-date="'+esc(d)+'">🎬 まとめ動画</button>' : "") +
+    '</div>';
+
+  h += '<div class="feed">';
+  h += '<div class="feedrow capture-row" data-act="new-log" data-date="'+esc(d)+'">' +
+    '<div class="avatar" style="background:'+avatarColor(mine||"me")+'">'+esc(initials(myName))+'</div>' +
+    '<div class="grow"><div class="fr-name">'+esc(myName)+'</div>' +
+    '<button type="button" class="capsule">📷 タップして撮影</button></div>' +
+    '<button type="button" class="icon-btn" data-act="new-video" data-date="'+esc(d)+'" title="動画で記録">🎬</button>' +
+  '</div>';
+
+  if(!dayLogs.length){
+    h += '<div class="empty" style="padding:34px 20px"><div class="sm muted">この日の記録はまだありません</div></div>';
+  } else {
+    dayLogs.forEach(function(l){
       var linkedExp = l.expenseId ? t.expenses.filter(function(x){ return x.id === l.expenseId; })[0] : null;
       var authorName = (t.cloudId && l.authorId) ? memberName(t, l.authorId) : null;
       var mineId = t.cloudId ? myMemberId(t) : null;
       var isNewPost = !!(t.cloudId && mineId && l.authorId && l.authorId !== mineId &&
         l.createdAt && l.createdAt > getLastSeen(t.id));
-      h += '<div class="log'+(isNewPost?' log-new':'')+'">' +
-        '<div class="row">' +
-          (authorName ? '<div class="avatar" style="width:26px;height:26px;font-size:11px;flex:0 0 auto">'+
-            esc(initials(authorName))+'</div>' : '') +
-          '<div class="grow"><h4>'+esc(l.title || "記録")+
-            (isNewPost ? '<span class="new-badge">NEW</span>' : '')+'</h4>' +
-          '<div class="meta">' +
-            (authorName ? esc(authorName)+" ・ " : "") +
-            (l.time ? esc(l.time)+" ・ " : "") +
-            (l.cat ? esc(l.cat) : "") +
-            (l.place ? " ・ 📍"+esc(l.place) : "") +
-          '</div></div>' +
-          '<button class="btn sm ghost" data-editlog="'+l.id+'">編集</button>' +
+      var displayName = authorName || l.title || "記録";
+      var thumb = (l.photos && l.photos.length) ? l.photos[0] : null;
+
+      h += '<div class="feedrow" data-editlog="'+l.id+'">' +
+        '<div class="avatar" style="background:'+avatarColor(l.authorId||l.id)+'">'+esc(initials(displayName))+'</div>' +
+        '<div class="grow">' +
+          '<div class="fr-name">'+esc(displayName)+(isNewPost ? '<span class="new-badge">NEW</span>' : '')+'</div>' +
+          '<div class="fr-sub">' + [
+            (authorName ? esc(l.title || "") : ""),
+            l.time ? esc(l.time) : "",
+            l.cat ? esc(l.cat) : "",
+            l.place ? "📍"+esc(l.place) : ""
+          ].filter(function(x){ return x; }).join(" ・ ") + '</div>' +
+          (l.memo ? '<div class="fr-memo">'+esc(l.memo)+'</div>' : "") +
+          (linkedExp ? '<div class="tiny" style="margin-top:2px;font-weight:700;color:var(--accent)">💴 '+yen(linkedExp.amount)+' 使用</div>' : "") +
         '</div>' +
-        (l.memo ? '<div class="memo">'+esc(l.memo)+'</div>' : "") +
-        (linkedExp ? '<div class="tiny" style="margin-top:6px;font-weight:700;color:var(--accent)">💴 '+yen(linkedExp.amount)+' 使用</div>' : "") +
-        (l.photos && l.photos.length ? '<div class="shots">' + l.photos.map(function(p,i){
-          return '<img src="'+p+'" data-zoom="'+l.id+':'+i+'" alt="">'; }).join("") + '</div>' : "") +
-        (l.video ? '<div class="vidwrap" style="margin-top:8px" data-video-id="'+esc(l.video.id)+'"></div>' : "") +
+        (thumb ? '<img class="fr-thumb" src="'+thumb+'" data-zoom="'+l.id+':0" alt="">'
+          : l.video ? '<div class="fr-thumb fr-video" data-playvideo="'+esc(l.video.id)+'">🎬</div>' : "") +
       '</div>';
+      if(l.photos && l.photos.length > 1){
+        h += '<div class="shots" style="margin:-6px 0 12px 58px">' + l.photos.slice(1).map(function(p,i){
+          return '<img src="'+p+'" data-zoom="'+l.id+':'+(i+1)+'" alt="">'; }).join("") + '</div>';
+      }
     });
-    h += '</div></div>';
-  });
+  }
+  h += '</div>';
   return h;
 }
 
@@ -927,6 +991,48 @@ el("overlay").addEventListener("click", function(ev){
   if(ev.target.classList.contains("mask") || ev.target.classList.contains("lightbox")) closeModal();
 });
 
+/* ---------------- trip title dropdown / calendar ---------------- */
+function openTripMenu(){
+  var tab = view.tab || "log";
+  var items = [["log","📔","記録"],["money","💴","お金・精算"],["set","⚙","設定・メンバー"]];
+  var h = '<div class="dmenu">' + items.map(function(x){
+    var on = tab === x[0];
+    return '<button type="button" class="dmenu-item'+(on?' on':'')+'" data-tab="'+x[0]+'">' +
+      '<span class="dmenu-ic">'+x[1]+'</span>'+x[2]+(on ? '<span class="dmenu-check">✓</span>' : '') +
+    '</button>';
+  }).join("") + '</div>';
+  el("overlay").innerHTML = '<div class="mask dmask"><div class="dsheet">'+h+'</div></div>';
+}
+var _calMonth = null;
+function openCalendar(t){
+  _calMonth = (view.date || todayStr()).slice(0,7);
+  modal(calendarHtml(t));
+}
+function calendarHtml(t){
+  var y = +_calMonth.slice(0,4), mo = +_calMonth.slice(5,7);
+  var startWd = new Date(y, mo-1, 1).getDay();
+  var daysInMonth = new Date(y, mo, 0).getDate();
+  var withLogs = {};
+  t.logs.forEach(function(l){ if(l.date) withLogs[l.date] = true; });
+  var h = '<h2 style="margin-bottom:10px">日付を選ぶ</h2>' +
+    '<div class="row" style="justify-content:space-between;margin-bottom:6px">' +
+      '<button type="button" class="icon-btn" data-act="cal-prev">‹</button>' +
+      '<div style="font-weight:700">'+y+'年'+mo+'月</div>' +
+      '<button type="button" class="icon-btn" data-act="cal-next">›</button>' +
+    '</div><div class="calgrid">';
+  WD.forEach(function(w){ h += '<div class="calwd">'+w+'</div>'; });
+  for(var i=0;i<startWd;i++) h += '<div></div>';
+  for(var day=1; day<=daysInMonth; day++){
+    var ds = y+"-"+p2(mo)+"-"+p2(day);
+    var isSel = ds === view.date;
+    var inRange = (!t.startDate || ds >= t.startDate) && (!t.endDate || ds <= t.endDate);
+    h += '<button type="button" class="calday'+(isSel?' on':'')+(!inRange?' out':'')+'" data-act="pick-date" data-date="'+ds+'">'+
+      day + (withLogs[ds] ? '<i class="dot"></i>' : '') + '</button>';
+  }
+  h += '</div>';
+  return h;
+}
+
 function pickRow(name, items, selected, multi){
   return '<div class="picks" data-picks="'+name+'" data-multi="'+(multi?1:0)+'">' +
     items.map(function(it){
@@ -974,9 +1080,9 @@ function formTrip(t){
   );
 }
 
-function formLog(t, log){
+function formLog(t, log, presetDate){
   var isNew = !log;
-  log = log || { date: todayStr(), time: nowTime(), title:"", place:"",
+  log = log || { date: presetDate || todayStr(), time: nowTime(), title:"", place:"",
                  memo:"", cat:"観光", photos:[] };
   window._photos = (log.photos || []).slice();
   window._photoIsReceipt = (log.receiptFlags || []).slice();
@@ -1597,34 +1703,13 @@ function compileDayVideo(t, dateStr, onDone, onError, onProgress){
   });
 }
 
-/* ---------------- video: タイムライン内の<video>にソースを流し込む ---------------- */
-function hydrateVideos(){
-  document.querySelectorAll(".vidwrap[data-video-id]").forEach(function(wrap){
-    if(wrap.dataset.hydrated) return;
-    wrap.dataset.hydrated = "1";
-    var id = wrap.dataset.videoId;
-    idbGet(id).then(function(blob){
-      if(blob){
-        var v = document.createElement("video");
-        v.controls = true; v.playsInline = true; v.preload = "none";
-        v.style.cssText = "width:100%;border-radius:10px;max-height:320px;background:#000";
-        v.src = URL.createObjectURL(blob);
-        wrap.appendChild(v);
-      } else {
-        wrap.innerHTML = '<div class="note">🎬 この動画は別の端末で撮影されたため、この端末では再生できません（動画は端末内保存のみのため）</div>';
-      }
-    }).catch(function(){
-      wrap.innerHTML = '<div class="note">🎬 動画を読み込めませんでした</div>';
-    });
-  });
-}
-
 function saveVideoLog(t, videoRef, caption){
   var l = {
-    date: todayStr(), time: nowTime(), title: caption, place: "", memo: "",
+    date: window._videoDate || todayStr(), time: nowTime(), title: caption, place: "", memo: "",
     cat: "その他", photos: [], video: videoRef,
     authorId: myMemberId(t) || defaultPayerId(t) || null, createdAt: Date.now()
   };
+  window._videoDate = null;
   if(t.cloudId){
     ensureFirebase(function(){
       cloudTripRef(t.cloudId).collection("logs").add(l)
@@ -1696,11 +1781,30 @@ document.addEventListener("click", function(ev){
     return;
   }
 
+  // play video
+  el2 = ev.target.closest("[data-playvideo]");
+  if(el2){
+    var vidId = el2.dataset.playvideo;
+    el("overlay").innerHTML = '<div class="lightbox"><video id="pv-video" controls playsinline autoplay ' +
+      'style="max-width:100%;max-height:100%;border-radius:10px"></video></div>';
+    idbGet(vidId).then(function(blob){
+      var v = el("pv-video");
+      if(!v) return;
+      if(blob) v.src = URL.createObjectURL(blob);
+      else v.outerHTML = '<div class="note" style="color:#fff;background:rgba(255,255,255,.1)">' +
+        '🎬 この動画は別の端末で撮影されたため、この端末では再生できません（動画は端末内保存のみのため）</div>';
+    }).catch(function(){
+      var v2 = el("pv-video");
+      if(v2) v2.outerHTML = '<div class="note" style="color:#fff;background:rgba(255,255,255,.1)">🎬 動画を読み込めませんでした</div>';
+    });
+    return;
+  }
+
   el2 = ev.target.closest("[data-open]");
   if(el2){ go({ name:"trip", id:el2.dataset.open, tab:"log" }); return; }
 
   el2 = ev.target.closest("[data-tab]");
-  if(el2){ view.tab = el2.dataset.tab; render(); return; }
+  if(el2){ view.tab = el2.dataset.tab; closeModal(); render(); return; }
 
   el2 = ev.target.closest("[data-editlog]");
   if(el2){
@@ -1748,15 +1852,35 @@ function act(a, node){
 
   if(a === "cancel"){ closeModal(); return; }
   if(a === "home"){ go({ name:"home" }); return; }
+  if(a === "back"){
+    if((view.tab||"log") !== "log"){ view.tab = "log"; render(); return; }
+    go({ name:"home" }); return;
+  }
+  if(a === "trip-menu"){ openTripMenu(); return; }
+  if(a === "open-cal"){ openCalendar(t); return; }
+  if(a === "cal-prev" || a === "cal-next"){
+    var cy = +_calMonth.slice(0,4), cm = +_calMonth.slice(5,7);
+    cm += (a === "cal-prev" ? -1 : 1);
+    if(cm < 1){ cm = 12; cy--; } else if(cm > 12){ cm = 1; cy++; }
+    _calMonth = cy + "-" + p2(cm);
+    modal(calendarHtml(t));
+    return;
+  }
+  if(a === "pick-date"){ view.date = node.dataset.date; closeModal(); render(); return; }
+  if(a === "day-prev" || a === "day-next"){
+    view.date = addDays(view.date, a === "day-prev" ? -1 : 1);
+    render(); return;
+  }
   if(a === "new-trip"){ formTrip(null); return; }
   if(a === "edit-trip"){ formTrip(t); return; }
-  if(a === "new-log"){ formLog(t, null); return; }
+  if(a === "new-log"){ formLog(t, null, node && node.dataset ? node.dataset.date : null); return; }
   if(a === "new-exp"){
     if(!t.members.length){ alert("先に設定タブでメンバーを追加してください。"); return; }
     formExp(t, null); return;
   }
 
   if(a === "new-video"){
+    window._videoDate = node && node.dataset ? node.dataset.date : null;
     // MediaRecorder非対応でも、動画自体はそのまま保存できるようにするため、
     // ここでは事前チェックで止めない(make-video側でフォールバックする)
     var vf = document.createElement("input");
