@@ -1042,6 +1042,63 @@ function shrink(file, cb){
   r.readAsDataURL(file);
 }
 
+/* ---------------- receipt crop (金額範囲の指定) ---------------- */
+function openReceiptCrop(src, onDone){
+  var srcUrl = (src instanceof Blob) ? URL.createObjectURL(src) : src;
+  var host = document.createElement("div");
+  host.innerHTML =
+    '<div class="mask" style="align-items:center;z-index:90">' +
+      '<div class="sheet" style="max-width:520px;padding:16px">' +
+        '<h2 style="margin-bottom:6px">金額の範囲を指定</h2>' +
+        '<div class="tiny muted" style="margin-bottom:10px">合計金額の数字を囲むように、指でなぞって範囲を選んでください</div>' +
+        '<div id="crop-wrap" style="position:relative;width:100%;overflow:hidden;border-radius:10px;' +
+          'border:1px solid var(--line);touch-action:none;background:#111">' +
+          '<img id="crop-img" src="'+srcUrl+'" style="width:100%;display:block;user-select:none;-webkit-user-select:none" draggable="false">' +
+          '<div id="crop-box" style="position:absolute;border:2px solid var(--accent);' +
+            'background:rgba(47,109,246,.18);display:none;pointer-events:none"></div>' +
+        '</div>' +
+        '<div class="actions">' +
+          '<button class="btn" data-act="crop-cancel">キャンセル</button>' +
+          '<button class="btn primary" data-act="crop-confirm" disabled id="crop-confirm-btn">この範囲を読み取る</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(host);
+  window._crop = { rect:null, srcUrl:srcUrl, revoke:(src instanceof Blob), onDone:onDone, host:host };
+
+  host.addEventListener("click", function(ev){
+    if(ev.target.classList.contains("mask")) act("crop-cancel", null);
+  });
+
+  var wrap = el("crop-wrap"), box = el("crop-box"), btn = el("crop-confirm-btn");
+  var start = null;
+  function pt(ev){
+    var r = wrap.getBoundingClientRect();
+    return { x: Math.min(Math.max(ev.clientX - r.left, 0), r.width),
+             y: Math.min(Math.max(ev.clientY - r.top, 0), r.height) };
+  }
+  function draw(a, b){
+    var x = Math.min(a.x,b.x), y = Math.min(a.y,b.y);
+    var w = Math.abs(a.x-b.x), h = Math.abs(a.y-b.y);
+    box.style.left = x+"px"; box.style.top = y+"px";
+    box.style.width = w+"px"; box.style.height = h+"px";
+    box.style.display = "block";
+    window._crop.rect = { x:x, y:y, w:w, h:h };
+    btn.disabled = !(w > 12 && h > 8);
+  }
+  wrap.addEventListener("pointerdown", function(ev){
+    wrap.setPointerCapture(ev.pointerId);
+    start = pt(ev);
+    draw(start, start);
+  });
+  wrap.addEventListener("pointermove", function(ev){
+    if(!start) return;
+    draw(start, pt(ev));
+  });
+  wrap.addEventListener("pointerup", function(){ start = null; });
+  wrap.addEventListener("pointercancel", function(){ start = null; });
+}
+
 /* ---------------- receipt OCR ---------------- */
 function ensureTesseract(cb, errCb){
   if(window.Tesseract){ cb(); return; }
@@ -1365,25 +1422,57 @@ function act(a, node){
 
   if(a === "ocr-receipt"){
     if(!window._photos.length){ alert("先に写真を追加してください。"); return; }
-    var st = el("f-ocr-status");
-    if(st) st.textContent = "読み取り中…（初回はデータ取得のため時間がかかります）";
-    ensureTesseract(function(){
-      var src = window._lastRawFile || window._photos[0];
-      Tesseract.recognize(src, "jpn+eng").then(function(res){
-        var n = parseReceiptTotal(res.data && res.data.text);
-        if(n){
-          var amtEl = el("f-amt");
-          if(amtEl){ amtEl.value = n; amtEl.dispatchEvent(new Event("input")); }
-          if(st) st.textContent = "¥" + n.toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
-        } else if(st){
-          st.textContent = "金額を自動で見つけられませんでした。手入力してください。";
-        }
-      }).catch(function(){
-        if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。";
+    var srcForCrop = window._lastRawFile || window._photos[0];
+    openReceiptCrop(srcForCrop, function(cropUrl){
+      var st = el("f-ocr-status");
+      if(st) st.textContent = "読み取り中…（初回はデータ取得のため時間がかかります）";
+      ensureTesseract(function(){
+        Tesseract.recognize(cropUrl, "jpn+eng").then(function(res){
+          var n = parseReceiptTotal(res.data && res.data.text);
+          if(n){
+            var amtEl = el("f-amt");
+            if(amtEl){ amtEl.value = n; amtEl.dispatchEvent(new Event("input")); }
+            if(st) st.textContent = "¥" + n.toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
+          } else if(st){
+            st.textContent = "金額を見つけられませんでした。もう一度、数字だけを囲んで試すか手入力してください。";
+          }
+        }).catch(function(){
+          if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。";
+        });
+      }, function(){
+        if(st) st.textContent = "読み取り機能を読み込めませんでした。インターネット接続が必要です。";
       });
-    }, function(){
-      if(st) st.textContent = "読み取り機能を読み込めませんでした。インターネット接続が必要です。";
     });
+    return;
+  }
+  if(a === "crop-cancel"){
+    var cr1 = window._crop;
+    if(cr1){
+      if(cr1.revoke) URL.revokeObjectURL(cr1.srcUrl);
+      if(cr1.host) cr1.host.remove();
+    }
+    window._crop = null;
+    return;
+  }
+  if(a === "crop-confirm"){
+    var cr2 = window._crop;
+    if(!cr2) return;
+    var cimg = el("crop-img"), cwrap = el("crop-wrap");
+    if(!cr2.rect || !cimg || !cimg.naturalWidth) return;
+    var scaleX = cimg.naturalWidth / cwrap.clientWidth;
+    var scaleY = cimg.naturalHeight / cwrap.clientHeight;
+    var sx = cr2.rect.x*scaleX, sy = cr2.rect.y*scaleY, sw = cr2.rect.w*scaleX, sh = cr2.rect.h*scaleY;
+    var scaleUp = sw < 500 ? Math.min(3, 500/Math.max(sw,1)) : 1;
+    var cc = document.createElement("canvas");
+    cc.width = Math.max(1, Math.round(sw*scaleUp));
+    cc.height = Math.max(1, Math.round(sh*scaleUp));
+    cc.getContext("2d").drawImage(cimg, sx, sy, sw, sh, 0, 0, cc.width, cc.height);
+    var cropUrl = cc.toDataURL("image/png");
+    if(cr2.revoke) URL.revokeObjectURL(cr2.srcUrl);
+    if(cr2.host) cr2.host.remove();
+    var onDone = cr2.onDone;
+    window._crop = null;
+    onDone(cropUrl);
     return;
   }
 
