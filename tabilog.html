@@ -144,6 +144,9 @@ textarea{min-height:90px;resize:vertical}
 .pick{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;
   padding:7px 14px;font-size:13.5px;font-weight:600}
 .pick.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.amtpick{border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);
+  border-radius:999px;padding:7px 14px;font-size:13.5px;font-weight:700}
+.amtpick:hover{filter:brightness(1.05)}
 .actions{display:flex;gap:10px;margin-top:20px}
 .actions .btn{flex:1;padding:11px}
 .quickshot{width:100%;aspect-ratio:4/3;border:2px dashed var(--line);border-radius:14px;
@@ -929,6 +932,7 @@ function formLog(t, log){
       '<div id="f-ocr-wrap" style="margin:-8px 0 14px;'+(window._photos.length?'':'display:none')+'">' +
         '<button type="button" class="btn sm" data-act="ocr-receipt">🧾 写真から金額を読み取る</button>' +
         '<div id="f-ocr-status" class="tiny muted" style="margin-top:6px"></div>' +
+        '<div class="picks" id="f-ocr-candidates" style="margin-top:6px"></div>' +
       '</div>' +
       (multiMembers ?
         '<div id="f-split-box" style="display:'+((+defAmt)>0?"":"none")+'">' +
@@ -1113,7 +1117,9 @@ function ensureTesseract(cb, errCb){
   s.onerror = function(){ window._tessLoading = null; errCb(); };
   document.head.appendChild(s);
 }
-function parseReceiptTotal(text){
+// テキストから金額の「候補」を優先順に返す。1つに絞り込まず、複数あれば
+// ユーザーにタップで選んでもらう方が誤読より確実なため。
+function receiptCandidates(text){
   var norm = String(text || "")
     .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
     .replace(/，/g, ",");
@@ -1127,42 +1133,41 @@ function parseReceiptTotal(text){
   }
   // キーワードの行に数字が無ければ、続く1〜2行も見る（OCRでラベルと金額が
   // 別行に分かれることがあるため）
-  function numNear(idx){
+  function numsNear(idx){
     for(var d=0; d<=2; d++){
       var nums = numsOnLine(lines[idx+d] || "");
-      if(nums.length) return nums[nums.length-1];
+      if(nums.length) return nums;
     }
-    return null;
+    return [];
   }
 
   // 「合計」系は「小計」より必ず優先する。小計を先に拾ってしまうのが
-  // 誤読の主な原因だったため、強い語と弱い語を分けて2段階で探す。
+  // 誤読の主な原因だったため、強い語と弱い語を分けて集める。
   var STRONG = ["合計","ごうけい","お会計","御会計","ご請求","現計","total","Total","TOTAL"];
   var WEAK = ["小計","お買上","計"];
 
+  var ranked = [];
   // 合計はレシート下部（支払い直前）に出ることが多いので下から探す
   for(var i=lines.length-1; i>=0; i--){
     for(var k=0;k<STRONG.length;k++){
-      if(lines[i].indexOf(STRONG[k]) >= 0){
-        var n = numNear(i);
-        if(n) return n;
-      }
+      if(lines[i].indexOf(STRONG[k]) >= 0) ranked = ranked.concat(numsNear(i));
     }
   }
   for(var i2=lines.length-1; i2>=0; i2--){
     for(var k2=0;k2<WEAK.length;k2++){
-      if(lines[i2].indexOf(WEAK[k2]) >= 0){
-        var n2 = numNear(i2);
-        if(n2) return n2;
-      }
+      if(lines[i2].indexOf(WEAK[k2]) >= 0) ranked = ranked.concat(numsNear(i2));
     }
   }
-
-  // キーワードが見つからない場合のみ、レシート全体の最大値を採用
+  // キーワードが1つも見つからない場合の保険として、全体の数字も加える
   var all = [];
   lines.forEach(function(line){ all = all.concat(numsOnLine(line)); });
-  if(all.length) return Math.max.apply(null, all);
-  return null;
+  ranked = ranked.concat(all);
+
+  var seen = {}, out = [];
+  ranked.forEach(function(n){
+    if(!seen[n]){ seen[n] = true; out.push(n); }
+  });
+  return out.slice(0, 6);
 }
 
 /* ---------------- photo zip export (LINEアルバム用) ---------------- */
@@ -1425,16 +1430,25 @@ function act(a, node){
     var srcForCrop = window._lastRawFile || window._photos[0];
     openReceiptCrop(srcForCrop, function(cropUrl){
       var st = el("f-ocr-status");
+      var cand = el("f-ocr-candidates");
+      if(cand) cand.innerHTML = "";
       if(st) st.textContent = "読み取り中…（初回はデータ取得のため時間がかかります）";
       ensureTesseract(function(){
         Tesseract.recognize(cropUrl, "jpn+eng").then(function(res){
-          var n = parseReceiptTotal(res.data && res.data.text);
-          if(n){
-            var amtEl = el("f-amt");
-            if(amtEl){ amtEl.value = n; amtEl.dispatchEvent(new Event("input")); }
-            if(st) st.textContent = "¥" + n.toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
-          } else if(st){
-            st.textContent = "金額を見つけられませんでした。もう一度、数字だけを囲んで試すか手入力してください。";
+          var nums = receiptCandidates(res.data && res.data.text);
+          var amtEl = el("f-amt");
+          if(nums.length === 0){
+            if(st) st.textContent = "金額を見つけられませんでした。もう少し狭く数字だけを囲むか、手入力してください。";
+          } else if(nums.length === 1){
+            if(amtEl){ amtEl.value = nums[0]; amtEl.dispatchEvent(new Event("input")); }
+            if(st) st.textContent = "¥" + nums[0].toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
+          } else {
+            if(st) st.textContent = "候補が複数見つかりました。金額をタップして選んでください：";
+            if(cand){
+              cand.innerHTML = nums.map(function(n){
+                return '<button type="button" class="amtpick" data-act="pick-amt" data-v="'+n+'">¥'+n.toLocaleString("ja-JP")+'</button>';
+              }).join("");
+            }
           }
         }).catch(function(){
           if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。";
@@ -1443,6 +1457,14 @@ function act(a, node){
         if(st) st.textContent = "読み取り機能を読み込めませんでした。インターネット接続が必要です。";
       });
     });
+    return;
+  }
+  if(a === "pick-amt"){
+    var amtEl2 = el("f-amt");
+    if(amtEl2){ amtEl2.value = node.dataset.v; amtEl2.dispatchEvent(new Event("input")); }
+    var cand2 = el("f-ocr-candidates"); if(cand2) cand2.innerHTML = "";
+    var st2 = el("f-ocr-status");
+    if(st2) st2.textContent = "¥" + Number(node.dataset.v).toLocaleString("ja-JP") + " を設定しました。";
     return;
   }
   if(a === "crop-cancel"){
