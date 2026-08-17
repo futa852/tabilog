@@ -667,8 +667,13 @@ function renderTrip(){
 
   el("main").innerHTML = h;
   el("fab").innerHTML =
-    tab === "log" ? '<button class="fab" data-act="new-log">＋ 記録</button>' :
-    tab === "exp" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
+    tab === "log" ?
+      '<div style="position:fixed;right:max(16px,calc(50vw - 380px + 16px));bottom:22px;z-index:15;display:flex;gap:10px">' +
+        '<button class="fab" style="position:static;background:#111" data-act="new-video">🎬</button>' +
+        '<button class="fab" style="position:static" data-act="new-log">＋ 記録</button>' +
+      '</div>'
+    : tab === "exp" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
+  if(tab === "log") hydrateVideos();
 }
 
 /* --- tab: 記録 --- */
@@ -686,7 +691,10 @@ function viewLog(t){
     byDate[d].sort(function(a,b){ return (a.time||"99") < (b.time||"99") ? -1 : 1; });
     h += '<div class="day"><div class="day-head">' +
       (n > 0 ? '<span class="d">Day '+n+'</span>' : '') +
-      '<span class="sm muted">'+fmtDate(d)+'</span></div><div class="tl">';
+      '<span class="sm muted">'+fmtDate(d)+'</span>' +
+      '<span class="grow"></span>' +
+      '<button class="btn sm ghost" data-act="day-video" data-date="'+esc(d)+'">🎬 まとめ動画</button>' +
+      '</div><div class="tl">';
     byDate[d].forEach(function(l){
       var linkedExp = l.expenseId ? t.expenses.filter(function(x){ return x.id === l.expenseId; })[0] : null;
       var authorName = (t.cloudId && l.authorId) ? memberName(t, l.authorId) : null;
@@ -711,6 +719,7 @@ function viewLog(t){
         (linkedExp ? '<div class="tiny" style="margin-top:6px;font-weight:700;color:var(--accent)">💴 '+yen(linkedExp.amount)+' 使用</div>' : "") +
         (l.photos && l.photos.length ? '<div class="shots">' + l.photos.map(function(p,i){
           return '<img src="'+p+'" data-zoom="'+l.id+':'+i+'" alt="">'; }).join("") + '</div>' : "") +
+        (l.video ? '<div class="vidwrap" style="margin-top:8px" data-video-id="'+esc(l.video.id)+'"></div>' : "") +
       '</div>';
     });
     h += '</div></div>';
@@ -962,6 +971,7 @@ function formLog(t, log){
   log = log || { date: todayStr(), time: nowTime(), title:"", place:"",
                  memo:"", cat:"観光", photos:[] };
   window._photos = (log.photos || []).slice();
+  window._photoIsReceipt = (log.receiptFlags || []).slice();
   window._lastRawFile = null;
 
   var hasMembers = t.members.length > 0;
@@ -1054,6 +1064,7 @@ function formLog(t, log){
       if(isNew) window._lastRawFile = f;
       shrink(f, function(url){
         window._photos.push(url);
+        window._photoIsReceipt.push(false);
         if(isNew){
           var box = el("f-shot");
           if(box) box.innerHTML = '<img src="'+url+'" alt="">';
@@ -1171,9 +1182,12 @@ function receiptCandidates(text){
     .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
     .replace(/，/g, ",")
     .replace(/、/g, ",")
-    // OCRは桁区切りの「,」をピリオドや空白に誤読しやすい。数字の直後にそれらが来て
-    // さらに続けてちょうど3桁の数字が来る場合は、桁区切りの誤読とみなしてカンマに補正する
-    .replace(/(\d)[ \t　.](\d{3})(?!\d)/g, "$1,$2");
+    // OCRは桁区切りの「,」をピリオドや空白、改行に誤読しやすい。数字の直後にそれらが
+    // 続き、さらにちょうど3桁の数字が続く場合は、桁区切りの誤読とみなしてカンマに補正する。
+    // 改行をまたぐケース(「3,」の直後で改行され「500」が次の行に来る等)を先に処理してから、
+    // 同じ行の中のケースを処理する。
+    .replace(/(\d)[ \t　.,]{0,3}\n[ \t　.,]{0,3}(\d{3})(?!\d)/g, "$1,$2")
+    .replace(/(\d)[ \t　.,]{1,3}(\d{3})(?!\d)/g, "$1,$2");
   var lines = norm.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
 
   function numsOnLine(line){
@@ -1317,6 +1331,247 @@ function collectTripPhotos(t){
   return files;
 }
 
+/* ---------------- video: 端末内ストレージ(IndexedDB) ---------------- */
+function idbOpen(){
+  return new Promise(function(resolve, reject){
+    var req = indexedDB.open("tabilog-media", 1);
+    req.onupgradeneeded = function(){ req.result.createObjectStore("blobs"); };
+    req.onsuccess = function(){ resolve(req.result); };
+    req.onerror = function(){ reject(req.error); };
+  });
+}
+function idbPut(id, blob){
+  return idbOpen().then(function(db){
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction("blobs", "readwrite");
+      tx.objectStore("blobs").put(blob, id);
+      tx.oncomplete = function(){ resolve(); };
+      tx.onerror = function(){ reject(tx.error); };
+    });
+  });
+}
+function idbGet(id){
+  return idbOpen().then(function(db){
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction("blobs", "readonly");
+      var req = tx.objectStore("blobs").get(id);
+      req.onsuccess = function(){ resolve(req.result || null); };
+      req.onerror = function(){ reject(req.error); };
+    });
+  });
+}
+function idbDelete(id){
+  return idbOpen().then(function(db){
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction("blobs", "readwrite");
+      tx.objectStore("blobs").delete(id);
+      tx.oncomplete = function(){ resolve(); };
+      tx.onerror = function(){ reject(tx.error); };
+    });
+  });
+}
+
+/* ---------------- video: 書き出し形式・オーバーレイ描画 ---------------- */
+function pickVideoMime(){
+  if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+  var candidates = ["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm","video/mp4"];
+  for(var i=0;i<candidates.length;i++){
+    if(MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+  }
+  return "";
+}
+function drawOverlayText(ctx, w, h, timeLabel, caption){
+  var pad = Math.round(h*0.035);
+  var fontSize = Math.max(14, Math.round(h*0.045));
+  var lines = caption ? [timeLabel, caption] : [timeLabel];
+  ctx.save();
+  ctx.font = fontSize + "px 'Courier New', monospace";
+  ctx.textBaseline = "bottom";
+  ctx.shadowColor = "rgba(0,0,0,.65)";
+  ctx.shadowBlur = 5;
+  ctx.globalAlpha = 0.62;
+  ctx.fillStyle = "#ffffff";
+  var y = h - pad;
+  for(var i=lines.length-1; i>=0; i--){
+    ctx.fillText(lines[i], pad, y);
+    y -= fontSize*1.35;
+  }
+  ctx.restore();
+}
+function nowTimeLabel(){
+  var d = new Date();
+  return d.getFullYear()+"/"+p2(d.getMonth()+1)+"/"+p2(d.getDate())+" "+p2(d.getHours())+":"+p2(d.getMinutes());
+}
+
+/* ---------------- video: 動画に時刻・ひとことを焼き込む ---------------- */
+function burnOverlay(videoFile, captionText, onDone, onError){
+  var mime = pickVideoMime();
+  if(!mime){ onError("この端末では動画の書き出しに対応していません。"); return; }
+  var url = URL.createObjectURL(videoFile);
+  var vid = document.createElement("video");
+  vid.src = url; vid.muted = false; vid.playsInline = true;
+  vid.addEventListener("loadedmetadata", function(){
+    var maxW = 720;
+    var scale = Math.min(1, maxW / vid.videoWidth);
+    var W = Math.round(vid.videoWidth*scale), H = Math.round(vid.videoHeight*scale);
+    var canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    var timeLabel = nowTimeLabel();
+
+    var stream = canvas.captureStream(30);
+    try{
+      var srcStream = vid.captureStream ? vid.captureStream() : (vid.mozCaptureStream ? vid.mozCaptureStream() : null);
+      if(srcStream) srcStream.getAudioTracks().forEach(function(tr){ stream.addTrack(tr); });
+    }catch(e){}
+
+    var recorder;
+    try{ recorder = new MediaRecorder(stream, { mimeType: mime }); }
+    catch(e){ URL.revokeObjectURL(url); onError("動画の書き出しに失敗しました。"); return; }
+    var chunks = [];
+    recorder.ondataavailable = function(e){ if(e.data.size) chunks.push(e.data); };
+    recorder.onstop = function(){
+      URL.revokeObjectURL(url);
+      onDone(new Blob(chunks, { type: mime.split(";")[0] }));
+    };
+
+    var drawing = true;
+    function drawFrame(){
+      if(!drawing) return;
+      ctx.drawImage(vid, 0, 0, W, H);
+      drawOverlayText(ctx, W, H, timeLabel, captionText);
+      requestAnimationFrame(drawFrame);
+    }
+    vid.addEventListener("ended", function(){ drawing = false; recorder.stop(); });
+    recorder.start();
+    vid.play().then(function(){ requestAnimationFrame(drawFrame); })
+      .catch(function(){ drawing = false; try{ recorder.stop(); }catch(e){} URL.revokeObjectURL(url); onError("動画を再生できませんでした。"); });
+  });
+  vid.addEventListener("error", function(){ URL.revokeObjectURL(url); onError("動画を読み込めませんでした。"); });
+}
+
+/* ---------------- video: 1日のまとめ動画(レシート写真は除外) ---------------- */
+function drawContain(ctx, img, W, H){
+  ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
+  var scale = Math.min(W/img.width, H/img.height);
+  var dw = img.width*scale, dh = img.height*scale;
+  ctx.drawImage(img, (W-dw)/2, (H-dh)/2, dw, dh);
+}
+function playVideoIntoCanvas(blob, ctx, W, H, onEnd){
+  var url = URL.createObjectURL(blob);
+  var vid = document.createElement("video");
+  vid.src = url; vid.muted = true; vid.playsInline = true;
+  var drawing = true;
+  function frame(){
+    if(!drawing) return;
+    ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
+    var scale = Math.min(W/vid.videoWidth, H/vid.videoHeight);
+    var dw = vid.videoWidth*scale, dh = vid.videoHeight*scale;
+    ctx.drawImage(vid, (W-dw)/2, (H-dh)/2, dw, dh);
+    requestAnimationFrame(frame);
+  }
+  vid.addEventListener("loadedmetadata", function(){
+    vid.play().then(function(){ requestAnimationFrame(frame); }).catch(function(){ drawing=false; URL.revokeObjectURL(url); onEnd(); });
+  });
+  vid.addEventListener("ended", function(){ drawing = false; URL.revokeObjectURL(url); onEnd(); });
+  vid.addEventListener("error", function(){ drawing = false; URL.revokeObjectURL(url); onEnd(); });
+}
+function compileDayVideo(t, dateStr, onDone, onError, onProgress){
+  var logsOfDay = t.logs.filter(function(l){ return l.date === dateStr; });
+  var items = [];
+  logsOfDay.forEach(function(l){
+    (l.photos || []).forEach(function(p, i){
+      var isReceipt = l.receiptFlags && l.receiptFlags[i];
+      if(!isReceipt) items.push({ type:"photo", src:p });
+    });
+    if(l.video && l.video.id) items.push({ type:"video", videoRef:l.video });
+  });
+  if(!items.length){ onError("この日にはまとめられる写真・動画がありません(レシート写真は対象外です)。"); return; }
+
+  Promise.all(items.map(function(it){
+    if(it.type === "photo") return Promise.resolve(it);
+    return idbGet(it.videoRef.id).then(function(blob){ it.blob = blob; return it; }).catch(function(){ it.blob = null; return it; });
+  })).then(function(resolved){
+    var mime = pickVideoMime();
+    if(!mime){ onError("この端末では動画の書き出しに対応していません。"); return; }
+    var W = 720, H = 720;
+    var canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    var ctx = canvas.getContext("2d");
+    var stream = canvas.captureStream(30);
+    var recorder;
+    try{ recorder = new MediaRecorder(stream, { mimeType: mime }); }
+    catch(e){ onError("動画の書き出しに失敗しました。"); return; }
+    var chunks = [];
+    recorder.ondataavailable = function(e){ if(e.data.size) chunks.push(e.data); };
+    recorder.onstop = function(){ onDone(new Blob(chunks, { type: mime.split(";")[0] })); };
+    recorder.start();
+
+    var idx = 0;
+    function next(){
+      if(idx >= resolved.length){ recorder.stop(); return; }
+      var it = resolved[idx];
+      onProgress && onProgress(idx+1, resolved.length);
+      if(it.type === "photo"){
+        var img = new Image();
+        img.onload = function(){
+          drawContain(ctx, img, W, H);
+          setTimeout(function(){ idx++; next(); }, 1400);
+        };
+        img.onerror = function(){ idx++; next(); };
+        img.src = it.src;
+      } else if(it.type === "video" && it.blob){
+        playVideoIntoCanvas(it.blob, ctx, W, H, function(){ idx++; next(); });
+      } else {
+        idx++; next();
+      }
+    }
+    next();
+  });
+}
+
+/* ---------------- video: タイムライン内の<video>にソースを流し込む ---------------- */
+function hydrateVideos(){
+  document.querySelectorAll(".vidwrap[data-video-id]").forEach(function(wrap){
+    if(wrap.dataset.hydrated) return;
+    wrap.dataset.hydrated = "1";
+    var id = wrap.dataset.videoId;
+    idbGet(id).then(function(blob){
+      if(blob){
+        var v = document.createElement("video");
+        v.controls = true; v.playsInline = true; v.preload = "none";
+        v.style.cssText = "width:100%;border-radius:10px;max-height:320px;background:#000";
+        v.src = URL.createObjectURL(blob);
+        wrap.appendChild(v);
+      } else {
+        wrap.innerHTML = '<div class="note">🎬 この動画は別の端末で撮影されたため、この端末では再生できません（動画は端末内保存のみのため）</div>';
+      }
+    }).catch(function(){
+      wrap.innerHTML = '<div class="note">🎬 動画を読み込めませんでした</div>';
+    });
+  });
+}
+
+function saveVideoLog(t, videoRef, caption){
+  var l = {
+    date: todayStr(), time: nowTime(), title: caption, place: "", memo: "",
+    cat: "その他", photos: [], video: videoRef,
+    authorId: myMemberId(t) || defaultPayerId(t) || null, createdAt: Date.now()
+  };
+  if(t.cloudId){
+    ensureFirebase(function(){
+      cloudTripRef(t.cloudId).collection("logs").add(l)
+        .then(function(){ window._videoFile = null; closeModal(); render(); })
+        .catch(function(){ alert("保存に失敗しました。"); closeModal(); });
+    }, function(){ alert("通信に問題が発生しました。"); closeModal(); });
+    return;
+  }
+  l.id = uid();
+  t.logs.push(l);
+  window._videoFile = null;
+  if(save()){ closeModal(); render(); }
+}
+
 function formExp(t, e){
   var isNew = !e;
   e = e || { date: t.startDate || todayStr(), title:"", amount:"", cat:"食事",
@@ -1360,7 +1615,12 @@ document.addEventListener("click", function(ev){
 
   // remove photo
   el2 = ev.target.closest("[data-rmphoto]");
-  if(el2){ window._photos.splice(+el2.dataset.rmphoto, 1); drawShots(); return; }
+  if(el2){
+    window._photos.splice(+el2.dataset.rmphoto, 1);
+    window._photoIsReceipt.splice(+el2.dataset.rmphoto, 1);
+    drawShots();
+    return;
+  }
 
   // zoom photo
   el2 = ev.target.closest("[data-zoom]");
@@ -1429,6 +1689,72 @@ function act(a, node){
     formExp(t, null); return;
   }
 
+  if(a === "new-video"){
+    if(!pickVideoMime()){ alert("この端末は動画の書き出しに対応していません。"); return; }
+    var vf = document.createElement("input");
+    vf.type = "file"; vf.accept = "video/*";
+    vf.onchange = function(){
+      var f = vf.files[0]; if(!f) return;
+      window._videoFile = f;
+      modal(
+        '<h2>動画を記録する</h2>' +
+        '<div class="tiny muted" style="margin-bottom:10px">時刻が動画に薄く自動で入ります。短い動画がおすすめです。' +
+        (t.cloudId ? '動画そのものはこの端末にのみ保存され、他のメンバーは再生できません（記録があったことは共有されます）。' : '') +
+        '</div>' +
+        '<label class="f"><span>ひとこと（任意・動画に薄く表示されます）</span>' +
+          '<input id="f-video-caption" autocomplete="off" placeholder="例）最高の景色"></label>' +
+        '<div id="video-progress" class="tiny muted" style="margin:4px 0 0"></div>' +
+        '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
+        '<button class="btn primary" data-act="make-video">作成する</button></div>'
+      );
+    };
+    vf.click();
+    return;
+  }
+  if(a === "make-video"){
+    var vfile = window._videoFile;
+    if(!vfile){ closeModal(); return; }
+    var caption = (el("f-video-caption").value || "").trim();
+    node.disabled = true; node.textContent = "処理中…";
+    var prog = el("video-progress");
+    if(prog) prog.textContent = "動画を書き出しています。しばらくお待ちください…";
+    burnOverlay(vfile, caption, function(outBlob){
+      var videoRef = { id: uid() };
+      idbPut(videoRef.id, outBlob).then(function(){
+        saveVideoLog(t, videoRef, caption);
+      }).catch(function(){
+        alert("保存に失敗しました。");
+        node.disabled = false; node.textContent = "作成する";
+      });
+    }, function(errMsg){
+      alert(errMsg || "動画の処理に失敗しました。");
+      node.disabled = false; node.textContent = "作成する";
+    });
+    return;
+  }
+
+  if(a === "day-video"){
+    var dayStr = node.dataset.date;
+    node.disabled = true;
+    var origLabel = node.textContent;
+    node.textContent = "作成中…";
+    compileDayVideo(t, dayStr, function(blob){
+      node.disabled = false; node.textContent = origLabel;
+      var ext = blob.type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+      var url = URL.createObjectURL(blob);
+      var a4 = document.createElement("a");
+      a4.href = url; a4.download = dayStr + "_まとめ." + ext;
+      document.body.appendChild(a4); a4.click(); a4.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    }, function(errMsg){
+      alert(errMsg);
+      node.disabled = false; node.textContent = origLabel;
+    }, function(cur, total){
+      node.textContent = "作成中…("+cur+"/"+total+")";
+    });
+    return;
+  }
+
   if(a === "save-new-trip" || a === "save-trip"){
     var title = el("f-title").value.trim();
     if(!title){ alert("タイトルを入力してください。"); return; }
@@ -1479,6 +1805,7 @@ function act(a, node){
   if(a === "ocr-receipt"){
     if(!window._photos.length){ alert("先に写真を追加してください。"); return; }
     var srcForCrop = window._lastRawFile || window._photos[0];
+    window._photoIsReceipt[0] = true; // 読み取りに使った写真は「まとめ動画」から除外する
     openReceiptCrop(srcForCrop, function(cropUrl){
       var st = el("f-ocr-status");
       var cand = el("f-ocr-candidates");
@@ -1560,7 +1887,7 @@ function act(a, node){
     var l = {
       date: el("f-date").value, time: el("f-time").value, title: ti,
       place: el("f-place").value.trim(), memo: memoVal,
-      cat: picked("cat"), photos: photos
+      cat: picked("cat"), photos: photos, receiptFlags: window._photoIsReceipt.slice()
     };
     var id = node.dataset.id;
     if(!id){
