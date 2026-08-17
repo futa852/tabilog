@@ -949,7 +949,6 @@ function formLog(t, log){
       '<input type="file" id="f-photo" accept="image/*" style="display:none">' +
       '<label class="f" style="margin-top:14px"><span>今どうしてる？</span>' +
         '<input id="f-title" autocomplete="off" value="'+esc(log.title)+'" placeholder="例）美ら海水族館に到着"></label>' +
-      amountBlock() +
       '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
       '<button class="btn primary" data-act="save-log" data-id="">記録する</button></div>' +
       '<details class="more"><summary>詳しく設定</summary>' +
@@ -961,6 +960,7 @@ function formLog(t, log){
         '<label class="f"><span>カテゴリ</span>' + pickRow("cat", LOG_CATS.map(function(c){
           return {v:c,t:c}; }), log.cat, false) + '</label>' +
         '<label class="f"><span>メモ</span><textarea id="f-memo" placeholder="もう少し詳しく">'+esc(log.memo)+'</textarea></label>' +
+        amountBlock() +
       '</details>'
     );
   } else {
