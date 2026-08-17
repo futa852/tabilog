@@ -79,7 +79,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 
 /* trip cards */
 .trip{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);
-  border-radius:var(--r);padding:0;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow);transition:.15s}
+  border-radius:var(--r);padding:0;margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow);
+  transition:.15s;cursor:pointer;font:inherit;color:inherit}
 .trip:hover{transform:translateY(-1px);border-color:var(--accent)}
 .trip .band{height:6px;background:var(--accent)}
 .trip .body{padding:14px 16px}
@@ -327,6 +328,11 @@ function defaultPayerId(trip){
 function lineShareUrl(text){
   return "https://line.me/R/msg/text/?" + encodeURIComponent(text);
 }
+function settleSummaryMsg(t, s){
+  return "【"+t.title+"】精算のお願い\n" + s.map(function(x){
+    return "・"+memberName(t,x.from)+" → "+memberName(t,x.to)+" "+yen(x.amount);
+  }).join("\n");
+}
 
 /* ---------------- cloud sync (Firebase, optional) ---------------- */
 var CLOUD = { app:null, db:null, auth:null, ready:false, unsubs:[], tripId:null };
@@ -522,6 +528,8 @@ var _joinId = _qp.get("join");
 var view = _remindTripId ? { name:"remind", id:_remindTripId }
   : _joinId ? { name:"join", id:_joinId }
   : { name:"home" };
+// アプリを開き直すたびに再表示したいので、あえてlocalStorageには保存しない(セッション内だけの「後で」)
+var _dismissedSettleBanners = {};
 function go(v){
   // 共有中の旅を離れるタイミングで既読にする(見ている間はNEWバッジを残したいので
   // 訪問中には更新しない)
@@ -605,9 +613,7 @@ function renderRemind(){
     h = '<div class="empty"><div class="big">✅</div>' +
       '<div style="font-weight:700;color:var(--text)">精算は完了しています</div></div>';
   } else {
-    var allMsg = "【"+t.title+"】精算のお願い\n" + s.map(function(x){
-      return "・"+memberName(t,x.from)+" → "+memberName(t,x.to)+" "+yen(x.amount);
-    }).join("\n");
+    var allMsg = settleSummaryMsg(t, s);
     h += '<div class="card">';
     s.forEach(function(x){
       var msg = "【"+t.title+"】精算のお願い\n"+memberName(t,x.from)+"さんから"+memberName(t,x.to)+
@@ -649,12 +655,14 @@ function renderHome(){
       var total = tripTotal(t);
       var nd = daysBetween(t.startDate, t.endDate) + 1;
       var unseen = unseenCount(t);
-      h += '<button class="trip" data-open="'+t.id+'">' +
+      h += '<div class="trip" role="button" tabindex="0" data-open="'+t.id+'">' +
         '<div class="band" style="background:'+esc(t.color||COLORS[0])+'"></div>' +
         '<div class="body">' +
           '<div class="row" style="gap:8px">' +
             '<h3 class="grow">'+esc(t.title)+'</h3>' +
             (unseen > 0 ? '<span class="chip" style="background:var(--neg);color:#fff;flex:0 0 auto">🔴 新着'+unseen+'件</span>' : '') +
+            '<button type="button" class="icon-btn" style="font-size:15px;flex:0 0 auto" ' +
+              'data-edittrip="'+t.id+'" title="旅の情報を編集">✏️</button>' +
           '</div>' +
           '<div class="sm muted trunc">'+esc(t.destination||"")+'</div>' +
           '<div class="chips">' +
@@ -664,7 +672,7 @@ function renderHome(){
             (total ? '<span class="chip">💴 '+yen(total)+'</span>' : '') +
             (t.cloudId ? '<span class="chip">☁️ 共有中</span>' : '') +
           '</div>' +
-        '</div></button>';
+        '</div></div>';
     });
   }
   el("main").innerHTML = h;
@@ -693,6 +701,22 @@ function renderTrip(){
       '<div class="row" style="gap:8px;margin-top:10px">' +
         '<button class="btn sm primary" data-act="export-photos">ZIPで書き出す</button>' +
         '<button class="btn sm ghost" data-act="dismiss-photo-banner">閉じる</button>' +
+      '</div></div>';
+  }
+
+  var settleList = t.expenses.length ? settlements(t) : [];
+  if(settleList.length && !_dismissedSettleBanners[t.id]){
+    var settleMsg = settleSummaryMsg(t, settleList);
+    h += '<div class="card" style="padding:14px;margin-bottom:14px;border-color:var(--warn)">' +
+      '<div class="row" style="gap:10px">' +
+        '<div style="font-size:22px">💴</div>' +
+        '<div class="grow"><div style="font-weight:700">未精算があります</div>' +
+        '<div class="sm muted">'+settleList.length+'件・未払いの人にLINEで送りましょう</div></div>' +
+      '</div>' +
+      '<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">' +
+        '<a class="btn sm primary" style="text-decoration:none" href="'+lineShareUrl(settleMsg)+'" ' +
+          'target="_blank" rel="noopener">📱 LINEで送る</a>' +
+        '<button class="btn sm ghost" data-act="dismiss-settle-banner" data-id="'+t.id+'">後で</button>' +
       '</div></div>';
   }
 
@@ -855,9 +879,7 @@ function viewSettle(t){
       '<div style="font-size:34px">✅</div><div style="font-weight:700;margin-top:4px">精算完了です</div>' +
       '<div class="sm muted">全員の貸し借りが釣り合っています</div></div>';
   } else {
-    var allMsg = "【"+t.title+"】精算のお願い\n" + s.map(function(x){
-      return "・"+memberName(t,x.from)+" → "+memberName(t,x.to)+" "+yen(x.amount);
-    }).join("\n");
+    var allMsg = settleSummaryMsg(t, s);
     h += '<div class="card">';
     s.forEach(function(x){
       var msg = "【"+t.title+"】精算のお願い\n"+memberName(t,x.from)+"さんから"+memberName(t,x.to)+
@@ -935,8 +957,22 @@ function viewSet(t){
   }
   h += '</div>';
 
-  h += '<div class="section-title">精算リマインド</div><div class="card" style="padding:16px">' +
-    '<div class="sm" style="font-weight:600;margin-bottom:10px">未精算があるとき、LINE送信画面を自動で開くタイマーを設定できます</div>' +
+  h += '<div class="section-title">📱 iPhoneで自動リマインド</div><div class="card" style="padding:16px">' +
+    '<div class="sm" style="font-weight:600;margin-bottom:8px">PC不要。iPhone単体の「ショートカット」Appで、毎日決まった時刻にこの精算画面を自動で開けます</div>' +
+    '<ol class="tiny" style="margin:0 0 12px;padding-left:18px;line-height:2">' +
+      '<li>「ショートカット」Appを開き、下の「オートメーション」タブ →「＋」→「個人用オートメーションを作成」</li>' +
+      '<li>「時刻」を選び、送りたい時間を設定して「次へ」</li>' +
+      '<li>「アクションを追加」→「URLを開く」を検索して追加</li>' +
+      '<li>下のURLをコピーして、そのアクションに貼り付け</li>' +
+      '<li>「次へ」→「実行前に尋ねる」をオフにして完了</li>' +
+    '</ol>' +
+    '<textarea readonly style="min-height:44px;font-size:12px">'+esc(remindUrlFor(t))+'</textarea>' +
+    '<button class="btn sm" style="margin-top:8px" data-act="copy-remind-url" data-url="'+esc(remindUrlFor(t))+'">URLをコピー</button>' +
+    '<div class="note" style="margin-top:12px">「実行前に尋ねる」をオフにすると、通知をタップしなくても自動でこの画面が開きます。' +
+    'iPhoneの電源が入っていて、ショートカットAppの通知が許可されている必要があります。</div></div>';
+
+  h += '<div class="section-title">💻 Windows PCで自動リマインド</div><div class="card" style="padding:16px">' +
+    '<div class="sm" style="font-weight:600;margin-bottom:10px">PCを使う場合は、タスクスケジューラで同じことができます</div>' +
     '<label class="f"><span>頻度</span>' + pickRow("remind-mode",
       [{v:"daily",t:"毎日"},{v:"once",t:"旅の翌日に1回"}], "daily", false) + '</label>' +
     '<label class="f"><span>時刻</span><input type="time" id="f-remind-time" value="20:00"></label>' +
@@ -971,8 +1007,8 @@ function viewSet(t){
     '</div>';
 
   h += '<div class="section-title">この旅</div>' +
+    '<div class="sm muted" style="margin-bottom:8px">旅のタイトルや日程の編集は、旅の一覧画面の✏️から行えます</div>' +
     '<div class="row" style="gap:8px;flex-wrap:wrap">' +
-    '<button class="btn" data-act="edit-trip">旅の情報を編集</button>' +
     (t.cloudId
       ? '<button class="btn danger" data-act="leave-trip">この旅から離れる</button>'
       : '<button class="btn danger" data-act="del-trip">この旅を削除</button>') +
@@ -995,7 +1031,7 @@ el("overlay").addEventListener("click", function(ev){
 /* ---------------- trip title dropdown / calendar ---------------- */
 function openTripMenu(){
   var tab = view.tab || "log";
-  var items = [["log","📔","記録"],["money","💴","お金・精算"],["set","⚙","設定・メンバー"]];
+  var items = [["log","📔","記録"],["money","💴","精算"],["set","⚙","設定"]];
   var h = '<div class="dmenu">' + items.map(function(x){
     var on = tab === x[0];
     return '<button type="button" class="dmenu-item'+(on?' on':'')+'" data-tab="'+x[0]+'">' +
@@ -1859,6 +1895,13 @@ document.addEventListener("click", function(ev){
     return;
   }
 
+  el2 = ev.target.closest("[data-edittrip]");
+  if(el2){
+    var tEdit = db.trips.filter(function(x){ return x.id === el2.dataset.edittrip; })[0];
+    if(tEdit) formTrip(tEdit);
+    return;
+  }
+
   el2 = ev.target.closest("[data-open]");
   if(el2){ go({ name:"trip", id:el2.dataset.open, tab:"log" }); return; }
 
@@ -1931,7 +1974,6 @@ function act(a, node){
     render(); return;
   }
   if(a === "new-trip"){ formTrip(null); return; }
-  if(a === "edit-trip"){ formTrip(t); return; }
   if(a === "new-log"){ formLog(t, null, node && node.dataset ? node.dataset.date : null); return; }
   if(a === "quick-shot"){ quickShot(t, node && node.dataset ? node.dataset.date : null); return; }
   if(a === "new-exp"){
@@ -2353,6 +2395,15 @@ function act(a, node){
     }
     return;
   }
+  if(a === "copy-remind-url"){
+    var remindUrlText = node.dataset.url;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(remindUrlText)
+        .then(function(){ alert("コピーしました。「URLを開く」アクションに貼り付けてください。"); })
+        .catch(function(){ alert("コピーできませんでした。テキストを手動で選択してコピーしてください。"); });
+    }
+    return;
+  }
 
   if(a === "export-photos"){
     var files = collectTripPhotos(t);
@@ -2367,6 +2418,9 @@ function act(a, node){
   }
   if(a === "dismiss-photo-banner"){
     t.photoExportDismissed = true; save(); render(); return;
+  }
+  if(a === "dismiss-settle-banner"){
+    _dismissedSettleBanners[node.dataset.id] = true; render(); return;
   }
 
   if(a === "del-trip"){
