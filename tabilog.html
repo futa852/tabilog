@@ -1690,7 +1690,8 @@ function act(a, node){
   }
 
   if(a === "new-video"){
-    if(!pickVideoMime()){ alert("この端末は動画の書き出しに対応していません。"); return; }
+    // MediaRecorder非対応でも、動画自体はそのまま保存できるようにするため、
+    // ここでは事前チェックで止めない(make-video側でフォールバックする)
     var vf = document.createElement("input");
     vf.type = "file"; vf.accept = "video/*";
     vf.onchange = function(){
@@ -1698,7 +1699,7 @@ function act(a, node){
       window._videoFile = f;
       modal(
         '<h2>動画を記録する</h2>' +
-        '<div class="tiny muted" style="margin-bottom:10px">時刻が動画に薄く自動で入ります。短い動画がおすすめです。' +
+        '<div class="tiny muted" style="margin-bottom:10px">時刻が動画に薄く自動で入ります(端末が対応していない場合は時刻なしで保存されます)。短い動画がおすすめです。' +
         (t.cloudId ? '動画そのものはこの端末にのみ保存され、他のメンバーは再生できません（記録があったことは共有されます）。' : '') +
         '</div>' +
         '<label class="f"><span>ひとこと（任意・動画に薄く表示されます）</span>' +
@@ -1717,19 +1718,46 @@ function act(a, node){
     var caption = (el("f-video-caption").value || "").trim();
     node.disabled = true; node.textContent = "処理中…";
     var prog = el("video-progress");
-    if(prog) prog.textContent = "動画を書き出しています。しばらくお待ちください…";
-    burnOverlay(vfile, caption, function(outBlob){
+
+    var settledVideo = false;
+    function finishRaw(reasonMsg){
+      if(settledVideo) return; settledVideo = true;
+      if(prog) prog.textContent = (reasonMsg || "") + "元の動画をそのまま保存します(時刻表示なし)…";
+      var videoRef = { id: uid() };
+      idbPut(videoRef.id, vfile).then(function(){
+        saveVideoLog(t, videoRef, caption);
+      }).catch(function(){
+        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。");
+        node.disabled = false; node.textContent = "作成する";
+      });
+    }
+    function finishProcessed(outBlob){
+      if(settledVideo) return; settledVideo = true;
       var videoRef = { id: uid() };
       idbPut(videoRef.id, outBlob).then(function(){
         saveVideoLog(t, videoRef, caption);
       }).catch(function(){
-        alert("保存に失敗しました。");
+        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。");
         node.disabled = false; node.textContent = "作成する";
       });
-    }, function(errMsg){
-      alert(errMsg || "動画の処理に失敗しました。");
-      node.disabled = false; node.textContent = "作成する";
-    });
+    }
+
+    var timeoutId = setTimeout(function(){ finishRaw("処理に時間がかかりすぎたため、"); }, 45000);
+
+    if(!pickVideoMime()){
+      clearTimeout(timeoutId);
+      finishRaw("この端末では時刻の焼き込みに対応していないため、");
+    } else {
+      if(prog) prog.textContent = "動画に時刻を焼き込んでいます。しばらくお待ちください…";
+      burnOverlay(vfile, caption, function(outBlob){
+        clearTimeout(timeoutId);
+        if(!outBlob || outBlob.size === 0){ finishRaw("書き出しがうまくいかなかったため、"); return; }
+        finishProcessed(outBlob);
+      }, function(errMsg){
+        clearTimeout(timeoutId);
+        finishRaw(errMsg ? errMsg+"のため、" : "");
+      });
+    }
     return;
   }
 
@@ -1813,23 +1841,29 @@ function act(a, node){
       if(st) st.textContent = "読み取り中…（初回はデータ取得のため時間がかかります）";
       ensureTesseract(function(){
         Tesseract.recognize(cropUrl, "jpn+eng").then(function(res){
-          var nums = receiptCandidates(res.data && res.data.text);
+          var rawText = (res.data && res.data.text) || "";
+          var nums = receiptCandidates(rawText);
           var amtEl = el("f-amt");
+          var debugHtml = '<details style="margin-top:8px"><summary class="tiny muted">読み取った文字を見る（うまくいかないときの確認用）</summary>' +
+            '<pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;background:var(--surface-2);' +
+            'padding:8px;border-radius:8px;margin-top:6px;max-height:150px;overflow:auto">' +
+            esc(rawText.trim() || "(文字を認識できませんでした)") + '</pre></details>';
           if(nums.length === 0){
-            if(st) st.textContent = "金額を見つけられませんでした。もう少し狭く数字だけを囲むか、手入力してください。";
+            if(st) st.innerHTML = "金額を見つけられませんでした。もう少し狭く数字だけを囲むか、手入力してください。" + debugHtml;
           } else if(nums.length === 1){
             if(amtEl){ amtEl.value = nums[0]; amtEl.dispatchEvent(new Event("input")); }
-            if(st) st.textContent = "¥" + nums[0].toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。";
+            if(st) st.innerHTML = "¥" + nums[0].toLocaleString("ja-JP") + " を読み取りました。金額を確認してください。" + debugHtml;
           } else {
-            if(st) st.textContent = "候補が複数見つかりました。金額をタップして選んでください：";
+            if(st) st.innerHTML = "候補が複数見つかりました。金額をタップして選んでください：" + debugHtml;
             if(cand){
               cand.innerHTML = nums.map(function(n){
                 return '<button type="button" class="amtpick" data-act="pick-amt" data-v="'+n+'">¥'+n.toLocaleString("ja-JP")+'</button>';
               }).join("");
             }
           }
-        }).catch(function(){
-          if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。";
+        }).catch(function(err){
+          if(st) st.textContent = "読み取りに失敗しました。インターネット接続を確認するか、手入力してください。" +
+            (err && err.message ? "（"+err.message+"）" : "");
         });
       }, function(){
         if(st) st.textContent = "読み取り機能を読み込めませんでした。インターネット接続が必要です。";
