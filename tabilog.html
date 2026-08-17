@@ -668,8 +668,10 @@ function renderTrip(){
   el("main").innerHTML = h;
   el("fab").innerHTML =
     tab === "log" ?
-      '<div style="position:fixed;right:max(16px,calc(50vw - 380px + 16px));bottom:22px;z-index:15;display:flex;gap:10px">' +
-        '<button class="fab" style="position:static;background:#111" data-act="new-video">🎬</button>' +
+      '<div style="position:fixed;right:max(16px,calc(50vw - 380px + 16px));bottom:22px;z-index:15;display:flex;align-items:center;gap:10px">' +
+        '<button class="fab" style="position:static;width:46px;height:46px;padding:0;border-radius:50%;' +
+          'font-size:19px;background:var(--surface);color:var(--text);border:1px solid var(--line);' +
+          'box-shadow:var(--shadow)" data-act="new-video" title="動画で記録">🎬</button>' +
         '<button class="fab" style="position:static" data-act="new-log">＋ 記録</button>' +
       '</div>'
     : tab === "exp" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
@@ -911,7 +913,8 @@ function viewSet(t){
 /* ---------------- modal ---------------- */
 function modal(html){
   el("overlay").innerHTML = '<div class="mask"><div class="sheet">'+html+'</div></div>';
-  var first = el("overlay").querySelector("input,textarea,select");
+  // type=fileやhiddenは対象外にして、実際に入力してほしい欄へ自動でフォーカスする
+  var first = el("overlay").querySelector("input:not([type=file]):not([type=hidden]),textarea,select");
   if(first) setTimeout(function(){ first.focus(); }, 30);
 }
 function closeModal(){ el("overlay").innerHTML = ""; }
@@ -1070,6 +1073,9 @@ function formLog(t, log){
           if(box) box.innerHTML = '<img src="'+url+'" alt="">';
           var ocrWrap = el("f-ocr-wrap");
           if(ocrWrap) ocrWrap.style.display = "";
+          // 写真を選び終えたら、そのまま「今どうしてる？」を打てるようにする
+          var titleEl = el("f-title");
+          if(titleEl && !titleEl.value) titleEl.focus();
         } else drawShots();
       });
     });
@@ -1340,13 +1346,17 @@ function idbOpen(){
     req.onerror = function(){ reject(req.error); };
   });
 }
+// SafariのIndexedDBはBlob/Fileを直接保存すると失敗することがあるため、
+// ArrayBufferに変換してから保存し、取り出す際にBlobへ復元する
 function idbPut(id, blob){
-  return idbOpen().then(function(db){
-    return new Promise(function(resolve, reject){
-      var tx = db.transaction("blobs", "readwrite");
-      tx.objectStore("blobs").put(blob, id);
-      tx.oncomplete = function(){ resolve(); };
-      tx.onerror = function(){ reject(tx.error); };
+  return blob.arrayBuffer().then(function(buf){
+    return idbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction("blobs", "readwrite");
+        tx.objectStore("blobs").put({ buf: buf, type: blob.type || "video/mp4" }, id);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
     });
   });
 }
@@ -1355,7 +1365,10 @@ function idbGet(id){
     return new Promise(function(resolve, reject){
       var tx = db.transaction("blobs", "readonly");
       var req = tx.objectStore("blobs").get(id);
-      req.onsuccess = function(){ resolve(req.result || null); };
+      req.onsuccess = function(){
+        var rec = req.result;
+        resolve(rec ? new Blob([rec.buf], { type: rec.type }) : null);
+      };
       req.onerror = function(){ reject(req.error); };
     });
   });
@@ -1726,8 +1739,8 @@ function act(a, node){
       var videoRef = { id: uid() };
       idbPut(videoRef.id, vfile).then(function(){
         saveVideoLog(t, videoRef, caption);
-      }).catch(function(){
-        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。");
+      }).catch(function(err){
+        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。" + (err && err.message ? "\n("+err.message+")" : ""));
         node.disabled = false; node.textContent = "作成する";
       });
     }
@@ -1736,8 +1749,8 @@ function act(a, node){
       var videoRef = { id: uid() };
       idbPut(videoRef.id, outBlob).then(function(){
         saveVideoLog(t, videoRef, caption);
-      }).catch(function(){
-        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。");
+      }).catch(function(err){
+        alert("動画の保存に失敗しました。動画が大きすぎる可能性があります。" + (err && err.message ? "\n("+err.message+")" : ""));
         node.disabled = false; node.textContent = "作成する";
       });
     }
