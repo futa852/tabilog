@@ -638,9 +638,9 @@ function renderTrip(){
     '<button class="icon-btn" data-act="home" title="一覧へ">←</button>' +
     '<div class="grow"><h1>'+esc(t.title)+'</h1>' +
     '<div class="sub">'+fmtRange(t.startDate,t.endDate)+'</div></div>' +
-    '<button class="icon-btn" data-act="edit-trip" title="旅の設定">⚙</button>';
+    '<button class="icon-btn" data-tab="set" title="設定">⚙</button>';
 
-  var tabs = [["log","記録"],["exp","会計"],["settle","精算"],["set","設定"]];
+  var tabs = [["log","記録"],["money","お金"]];
   var h = '<div class="tabs">' + tabs.map(function(x){
       return '<button data-tab="'+x[0]+'" class="'+(tab===x[0]?"on":"")+'">'+x[1]+'</button>';
     }).join("") + '</div>';
@@ -661,8 +661,7 @@ function renderTrip(){
   }
 
   if(tab === "log") h += viewLog(t);
-  else if(tab === "exp") h += viewExp(t);
-  else if(tab === "settle") h += viewSettle(t);
+  else if(tab === "money") h += viewMoney(t);
   else h += viewSet(t);
 
   el("main").innerHTML = h;
@@ -674,8 +673,14 @@ function renderTrip(){
           'box-shadow:var(--shadow)" data-act="new-video" title="動画で記録">🎬</button>' +
         '<button class="fab" style="position:static" data-act="new-log">＋ 記録</button>' +
       '</div>'
-    : tab === "exp" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
+    : tab === "money" ? '<button class="fab" data-act="new-exp">＋ 支出</button>' : "";
   if(tab === "log") hydrateVideos();
+}
+
+/* --- tab: お金(会計+精算をまとめて表示) --- */
+function viewMoney(t){
+  if(!t.expenses.length) return viewExp(t);
+  return viewExp(t) + '<div style="margin-top:8px"></div>' + viewSettle(t);
 }
 
 /* --- tab: 記録 --- */
@@ -1013,6 +1018,7 @@ function formLog(t, log){
       '<input type="file" id="f-photo" accept="image/*" style="display:none">' +
       '<label class="f" style="margin-top:14px"><span>今どうしてる？</span>' +
         '<input id="f-title" autocomplete="off" value="'+esc(log.title)+'" placeholder="例）美ら海水族館に到着"></label>' +
+      (hasMembers ? '<div id="f-auto-amt-result" style="display:none;margin:-8px 0 14px"></div>' : '') +
       '<div class="actions"><button class="btn" data-act="cancel">キャンセル</button>' +
       '<button class="btn primary" data-act="save-log" data-id="">記録する</button></div>' +
       '<details class="more"><summary>詳しく設定</summary>' +
@@ -1027,6 +1033,11 @@ function formLog(t, log){
         amountBlock() +
       '</details>'
     );
+    // 「＋記録」を押した瞬間にワンタップでカメラ/写真選択を開く(setlogのような体験)
+    if(!window._photos.length){
+      var fpAuto = el("f-photo");
+      if(fpAuto) fpAuto.click();
+    }
   } else {
     modal(
       '<h2>記録を編集</h2>' +
@@ -1076,6 +1087,7 @@ function formLog(t, log){
           // 写真を選び終えたら、そのまま「今どうしてる？」を打てるようにする
           var titleEl = el("f-title");
           if(titleEl && !titleEl.value) titleEl.focus();
+          autoReadReceipt(); // 金額を自動で探す(セットログのように手間をかけない)
         } else drawShots();
       });
     });
@@ -1239,6 +1251,48 @@ function receiptCandidates(text){
     if(!seen[n]){ seen[n] = true; out.push(n); }
   });
   return out.slice(0, 6);
+}
+
+// 写真を追加した瞬間に、ボタンを押さず自動で金額を探す(見つかった/複数候補が
+// あるときだけ画面に出す。見つからなければ何も表示せず静かに終わる)
+function autoReadReceipt(){
+  var resultBox = el("f-auto-amt-result");
+  if(!resultBox) return;
+  var src = window._lastRawFile || window._photos[window._photos.length - 1];
+  if(!src) return;
+  resultBox.style.display = "";
+  resultBox.innerHTML = '<span class="tiny muted">🧾 金額を自動で探しています…</span>';
+  ensureTesseract(function(){
+    Tesseract.recognize(src, "jpn+eng").then(function(res){
+      if(!el("f-auto-amt-result")) return; // モーダルが閉じられていたら何もしない
+      var nums = receiptCandidates((res.data && res.data.text) || "");
+      if(nums.length === 0){
+        resultBox.style.display = "none";
+        resultBox.innerHTML = "";
+        return;
+      }
+      if(nums.length === 1){
+        var amtEl = el("f-amt");
+        if(amtEl){ amtEl.value = nums[0]; amtEl.dispatchEvent(new Event("input")); }
+        resultBox.innerHTML =
+          '<span class="tiny" style="color:var(--accent);font-weight:700">💴 ¥'+nums[0].toLocaleString("ja-JP")+' を自動で検出しました</span> ' +
+          '<button type="button" class="btn sm ghost" data-act="open-amt-details">確認する</button>';
+      } else {
+        resultBox.innerHTML =
+          '<div class="tiny muted" style="margin-bottom:4px">💴 金額の候補が見つかりました。タップして選択：</div>' +
+          '<div class="picks">' + nums.map(function(n){
+            return '<button type="button" class="amtpick" data-act="pick-amt" data-v="'+n+'">¥'+n.toLocaleString("ja-JP")+'</button>';
+          }).join("") + '</div>';
+      }
+    }).catch(function(){
+      if(!el("f-auto-amt-result")) return;
+      resultBox.style.display = "none";
+      resultBox.innerHTML = "";
+    });
+  }, function(){
+    resultBox.style.display = "none";
+    resultBox.innerHTML = "";
+  });
 }
 
 /* ---------------- photo zip export (LINEアルバム用) ---------------- */
@@ -1890,6 +1944,21 @@ function act(a, node){
     var cand2 = el("f-ocr-candidates"); if(cand2) cand2.innerHTML = "";
     var st2 = el("f-ocr-status");
     if(st2) st2.textContent = "¥" + Number(node.dataset.v).toLocaleString("ja-JP") + " を設定しました。";
+    var autoBox2 = el("f-auto-amt-result");
+    if(autoBox2){
+      autoBox2.innerHTML = '<span class="tiny" style="color:var(--accent);font-weight:700">💴 ¥'+
+        Number(node.dataset.v).toLocaleString("ja-JP")+' を設定しました</span>';
+    }
+    return;
+  }
+  if(a === "open-amt-details"){
+    var det = document.querySelector("details.more");
+    if(det) det.open = true;
+    var amtEl4 = el("f-amt");
+    if(amtEl4){
+      if(amtEl4.scrollIntoView) amtEl4.scrollIntoView({ behavior:"smooth", block:"center" });
+      amtEl4.focus();
+    }
     return;
   }
   if(a === "crop-cancel"){
@@ -2073,7 +2142,7 @@ function act(a, node){
     return;
   }
 
-  if(a === "open-trip"){ go({ name:"trip", id: node.dataset.id, tab:"settle" }); return; }
+  if(a === "open-trip"){ go({ name:"trip", id: node.dataset.id, tab:"money" }); return; }
 
   if(a === "gen-remind"){
     var mode = picked("remind-mode", document) || "daily";
