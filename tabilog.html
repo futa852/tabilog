@@ -753,10 +753,11 @@ function viewLog(t){
     '</div>';
 
   h += '<div class="feed">';
-  h += '<div class="feedrow capture-row" data-act="new-log" data-date="'+esc(d)+'">' +
+  h += '<div class="feedrow capture-row" data-act="quick-shot" data-date="'+esc(d)+'">' +
     '<div class="avatar" style="background:'+avatarColor(mine||"me")+'">'+esc(initials(myName))+'</div>' +
     '<div class="grow"><div class="fr-name">'+esc(myName)+'</div>' +
     '<button type="button" class="capsule">📷 タップして撮影</button></div>' +
+    '<button type="button" class="icon-btn" data-act="new-log" data-date="'+esc(d)+'" title="文字で記録">✏️</button>' +
     '<button type="button" class="icon-btn" data-act="new-video" data-date="'+esc(d)+'" title="動画で記録">🎬</button>' +
   '</div>';
 
@@ -893,7 +894,7 @@ function viewSettle(t){
       '<div class="grow"><div style="font-weight:600">'+esc(m.name)+'</div>' +
       '<div class="tiny muted num">立替 '+yen(paid)+' ／ 負担 '+yen(owe)+'</div></div>' +
       '<div class="num '+(v>0?"pos":v<0?"neg":"muted")+'" style="font-weight:700">' +
-        (v>0?"+":"")+yen(v)+'</div></div>';
+        yen(v)+'</div></div>';
   });
   return h + '</div>';
 }
@@ -1139,11 +1140,6 @@ function formLog(t, log, presetDate){
         amountBlock() +
       '</details>'
     );
-    // 「＋記録」を押した瞬間にワンタップでカメラ/写真選択を開く(setlogのような体験)
-    if(!window._photos.length){
-      var fpAuto = el("f-photo");
-      if(fpAuto) fpAuto.click();
-    }
   } else {
     modal(
       '<h2>記録を編集</h2>' +
@@ -1399,6 +1395,69 @@ function autoReadReceipt(){
     resultBox.style.display = "none";
     resultBox.innerHTML = "";
   });
+}
+
+/* ---------------- タップして撮影(セットログ風・保存ボタン無しで即記録) ---------------- */
+function quickShot(t, date){
+  var inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*"; inp.capture = "environment";
+  inp.onchange = function(){
+    var f = inp.files[0]; if(!f) return;
+    shrink(f, function(url){
+      var l = {
+        date: date || view.date || todayStr(), time: nowTime(), title:"", place:"",
+        memo:"", cat:"観光", photos:[url], receiptFlags:[false],
+        authorId: myMemberId(t) || defaultPayerId(t) || null, createdAt: Date.now()
+      };
+      saveQuickLog(t, l, f);
+    });
+  };
+  inp.click();
+}
+function saveQuickLog(t, l, rawFile){
+  if(t.cloudId){
+    ensureFirebase(function(){
+      cloudTripRef(t.cloudId).collection("logs").add(l).then(function(ref){
+        autoLinkReceipt(t.id, ref.id, rawFile, true);
+      }).catch(function(){ alert("保存に失敗しました。通信環境をご確認ください。"); });
+    }, function(){ alert("通信に問題が発生しました。"); });
+    return;
+  }
+  l.id = uid();
+  t.logs.push(l);
+  if(!save()) return;
+  render();
+  autoLinkReceipt(t.id, l.id, rawFile, false);
+}
+// レシート写真から金額の候補が1つだけ見つかった場合だけ、確認なしで支出に自動リンクする
+// (候補が複数/0件のときは誤リンクを避けるため何もしない。あとで記録を開けば手動で読み取れる)
+function autoLinkReceipt(tripId, logId, rawFile, isCloud){
+  ensureTesseract(function(){
+    Tesseract.recognize(rawFile, "jpn+eng").then(function(res){
+      var nums = receiptCandidates((res.data && res.data.text) || "");
+      if(nums.length !== 1) return;
+      var tt = db.trips.filter(function(x){ return x.id === tripId; })[0];
+      if(!tt || !tt.members.length) return;
+      var log = tt.logs.filter(function(x){ return x.id === logId; })[0];
+      if(!log || log.expenseId) return;
+      var amt = nums[0];
+      var payer = defaultPayerId(tt);
+      var share = tt.members.map(function(m){ return m.id; });
+      var expData = { date: log.date, title: "記録の支出", amount: amt, cat:"その他", payerId: payer, sharedBy: share };
+      if(isCloud){
+        var ref = cloudTripRef(tt.cloudId);
+        ref.collection("expenses").add(expData).then(function(expRef){
+          return ref.collection("logs").doc(logId).set({ expenseId: expRef.id }, { merge:true });
+        }).catch(function(){});
+      } else {
+        expData.id = uid();
+        tt.expenses.push(expData);
+        log.expenseId = expData.id;
+        tt.lastPayerId = payer;
+        if(save() && view.name==="trip" && view.id===tripId) render();
+      }
+    }).catch(function(){});
+  }, function(){});
 }
 
 /* ---------------- photo zip export (LINEアルバム用) ---------------- */
@@ -1874,6 +1933,7 @@ function act(a, node){
   if(a === "new-trip"){ formTrip(null); return; }
   if(a === "edit-trip"){ formTrip(t); return; }
   if(a === "new-log"){ formLog(t, null, node && node.dataset ? node.dataset.date : null); return; }
+  if(a === "quick-shot"){ quickShot(t, node && node.dataset ? node.dataset.date : null); return; }
   if(a === "new-exp"){
     if(!t.members.length){ alert("先に設定タブでメンバーを追加してください。"); return; }
     formExp(t, null); return;
