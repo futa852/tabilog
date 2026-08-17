@@ -99,6 +99,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .log:before{content:"";position:absolute;left:-20px;top:16px;width:10px;height:10px;border-radius:50%;
   background:var(--accent);box-shadow:0 0 0 3px var(--bg)}
 .log h4{margin:0;font-size:15px}
+.log-new{border-color:var(--accent)}
+.new-badge{display:inline-block;background:var(--neg);color:#fff;font-size:10px;font-weight:800;
+  padding:2px 6px;border-radius:999px;vertical-align:middle;margin-left:5px}
 .log .meta{font-size:12px;color:var(--muted);margin-top:2px}
 .log .memo{margin-top:6px;font-size:14px;white-space:pre-wrap;word-break:break-word}
 .shots{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
@@ -426,6 +429,30 @@ function syncViewCloud(){
   else { cloudUnsubscribeAll(); }
 }
 
+/* ---------------- 既読管理（友達の新着を見つける） ---------------- */
+function getLastSeen(tripId){
+  try{
+    var m = JSON.parse(localStorage.getItem("tabilog.lastSeen") || "{}");
+    return m[tripId] || 0;
+  }catch(e){ return 0; }
+}
+function setLastSeen(tripId, ts){
+  try{
+    var m = JSON.parse(localStorage.getItem("tabilog.lastSeen") || "{}");
+    m[tripId] = ts;
+    localStorage.setItem("tabilog.lastSeen", JSON.stringify(m));
+  }catch(e){}
+}
+function unseenCount(t){
+  if(!t.cloudId) return 0;
+  var mine = myMemberId(t);
+  if(!mine) return 0;
+  var seen = getLastSeen(t.id);
+  return t.logs.filter(function(l){
+    return l.createdAt && l.authorId && l.authorId !== mine && l.createdAt > seen;
+  }).length;
+}
+
 /* ---------------- reminder scheduling (Windows タスクスケジューラ用) ---------------- */
 function remindTaskName(t){ return "TabiLog_" + t.id; }
 function remindUrlFor(t){
@@ -456,6 +483,12 @@ var view = _remindTripId ? { name:"remind", id:_remindTripId }
   : _joinId ? { name:"join", id:_joinId }
   : { name:"home" };
 function go(v){
+  // 共有中の旅を離れるタイミングで既読にする(見ている間はNEWバッジを残したいので
+  // 訪問中には更新しない)
+  if(view.name === "trip" && view.id){
+    var curT = db.trips.filter(function(x){ return x.id === view.id; })[0];
+    if(curT && curT.cloudId) setLastSeen(curT.id, Date.now());
+  }
   if(location.search) { try{ history.replaceState(null, "", location.pathname); }catch(e){} }
   view = v; render(); window.scrollTo(0,0);
   syncViewCloud();
@@ -575,10 +608,14 @@ function renderHome(){
     sorted.forEach(function(t){
       var total = tripTotal(t);
       var nd = daysBetween(t.startDate, t.endDate) + 1;
+      var unseen = unseenCount(t);
       h += '<button class="trip" data-open="'+t.id+'">' +
         '<div class="band" style="background:'+esc(t.color||COLORS[0])+'"></div>' +
         '<div class="body">' +
-          '<h3>'+esc(t.title)+'</h3>' +
+          '<div class="row" style="gap:8px">' +
+            '<h3 class="grow">'+esc(t.title)+'</h3>' +
+            (unseen > 0 ? '<span class="chip" style="background:var(--neg);color:#fff;flex:0 0 auto">🔴 新着'+unseen+'件</span>' : '') +
+          '</div>' +
           '<div class="sm muted trunc">'+esc(t.destination||"")+'</div>' +
           '<div class="chips">' +
             '<span class="chip">📅 '+fmtRange(t.startDate,t.endDate)+(nd>1?" ・"+nd+"日間":"")+'</span>' +
@@ -652,14 +689,24 @@ function viewLog(t){
       '<span class="sm muted">'+fmtDate(d)+'</span></div><div class="tl">';
     byDate[d].forEach(function(l){
       var linkedExp = l.expenseId ? t.expenses.filter(function(x){ return x.id === l.expenseId; })[0] : null;
-      h += '<div class="log">' +
-        '<div class="row"><div class="grow"><h4>'+esc(l.title || "記録")+'</h4>' +
-        '<div class="meta">' +
-          (l.time ? esc(l.time)+" ・ " : "") +
-          (l.cat ? esc(l.cat) : "") +
-          (l.place ? " ・ 📍"+esc(l.place) : "") +
-        '</div></div>' +
-        '<button class="btn sm ghost" data-editlog="'+l.id+'">編集</button></div>' +
+      var authorName = (t.cloudId && l.authorId) ? memberName(t, l.authorId) : null;
+      var mineId = t.cloudId ? myMemberId(t) : null;
+      var isNewPost = !!(t.cloudId && mineId && l.authorId && l.authorId !== mineId &&
+        l.createdAt && l.createdAt > getLastSeen(t.id));
+      h += '<div class="log'+(isNewPost?' log-new':'')+'">' +
+        '<div class="row">' +
+          (authorName ? '<div class="avatar" style="width:26px;height:26px;font-size:11px;flex:0 0 auto">'+
+            esc(initials(authorName))+'</div>' : '') +
+          '<div class="grow"><h4>'+esc(l.title || "記録")+
+            (isNewPost ? '<span class="new-badge">NEW</span>' : '')+'</h4>' +
+          '<div class="meta">' +
+            (authorName ? esc(authorName)+" ・ " : "") +
+            (l.time ? esc(l.time)+" ・ " : "") +
+            (l.cat ? esc(l.cat) : "") +
+            (l.place ? " ・ 📍"+esc(l.place) : "") +
+          '</div></div>' +
+          '<button class="btn sm ghost" data-editlog="'+l.id+'">編集</button>' +
+        '</div>' +
         (l.memo ? '<div class="memo">'+esc(l.memo)+'</div>' : "") +
         (linkedExp ? '<div class="tiny" style="margin-top:6px;font-weight:700;color:var(--accent)">💴 '+yen(linkedExp.amount)+' 使用</div>' : "") +
         (l.photos && l.photos.length ? '<div class="shots">' + l.photos.map(function(p,i){
@@ -1122,7 +1169,11 @@ function ensureTesseract(cb, errCb){
 function receiptCandidates(text){
   var norm = String(text || "")
     .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
-    .replace(/，/g, ",");
+    .replace(/，/g, ",")
+    .replace(/、/g, ",")
+    // OCRは桁区切りの「,」をピリオドや空白に誤読しやすい。数字の直後にそれらが来て
+    // さらに続けてちょうど3桁の数字が来る場合は、桁区切りの誤読とみなしてカンマに補正する
+    .replace(/(\d)[ \t　.](\d{3})(?!\d)/g, "$1,$2");
   var lines = norm.split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
 
   function numsOnLine(line){
@@ -1512,6 +1563,11 @@ function act(a, node){
       cat: picked("cat"), photos: photos
     };
     var id = node.dataset.id;
+    if(!id){
+      // 新規作成時だけ投稿者と作成日時を記録する(編集では上書きしない)
+      l.authorId = myMemberId(t) || defaultPayerId(t) || null;
+      l.createdAt = Date.now();
+    }
 
     var amtEl = el("f-amt");
     var expData = null;
